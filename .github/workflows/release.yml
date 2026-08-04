@@ -1,0 +1,233 @@
+name: Release DMG
+
+# Builds the signed and notarized DMG with the root Makefile and attaches it to a
+# GitHub release.
+#
+#   release (published)  build the release that was just published
+#   workflow_dispatch    build a version you name and attach it to that release
+#
+# The release must already exist: this workflow only uploads assets to it, it
+# never creates or edits the release itself.
+#
+# Required repository secrets (Settings > Secrets and variables > Actions):
+#
+#   MACOS_CERT_P12_BASE64     Developer ID Application .p12, base64 encoded:
+#                               base64 -i secrets/DeveloperID_Application.p12 | pbcopy
+#   MACOS_CERT_P12_PASSWORD   the password set when exporting that .p12
+#   MACOS_SIGN_IDENTITY       full identity name, exactly as `make identities` prints it,
+#                               e.g. "Developer ID Application: Your Name (ABCDE12345)"
+#   APPLE_TEAM_ID             10-character Apple Developer Team ID
+#
+# Notarization credentials, one of these two sets:
+#
+#   ASC_API_KEY_P8_BASE64     App Store Connect API key (.p8), base64 encoded  [preferred]
+#   ASC_API_KEY_ID
+#   ASC_API_ISSUER_ID
+#
+#   APPLE_ID                  Apple ID + app-specific password                 [fallback]
+#   APPLE_APP_PASSWORD
+#
+# Credentials are passed to make through the environment, so nothing is written
+# to secrets/config.mk and no password reaches a command line except the
+# APPLE_APP_PASSWORD fallback (which notarytool takes as an argument). See
+# secrets/README.md.
+
+on:
+  release:
+    # `published` also covers publishing a draft, which `created` does not.
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release to build and upload to, e.g. 0.1.0 or v0.1.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  # One notarization run per release at a time; they share a build keychain.
+  group: release-dmg-${{ github.event.release.tag_name || inputs.version }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  dmg:
+    name: Build, notarize and upload DMG
+    # macos-15 ships Xcode 16, which MacQ requires. macos-latest works too, at
+    # the cost of tracking whatever Xcode the image moves to.
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    env:
+      # Signing and notarization, read by the Makefile as make variables.
+      SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+      TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      CERT_P12: secrets/DeveloperID_Application.p12
+      CERT_P12_PASSWORD: ${{ secrets.MACOS_CERT_P12_PASSWORD }}
+      ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+      ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      # create-dmg drives Finder over AppleScript to lay out the window, which is
+      # not available on a headless runner. hdiutil produces a plain but fully
+      # valid DMG (app plus an /Applications symlink).
+      DMG_TOOL: hdiutil
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Resolve release tag and version
+        id: rel
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$EVENT_TAG" ]; then
+            tag="$EVENT_TAG"
+          else
+            # Accept the input with or without a leading "v" and find the release
+            # that actually exists.
+            tag=""
+            for candidate in "$INPUT_VERSION" "v${INPUT_VERSION#v}" "${INPUT_VERSION#v}"; do
+              if gh release view "$candidate" -R "$GITHUB_REPOSITORY" --json tagName >/dev/null 2>&1; then
+                tag="$candidate"
+                break
+              fi
+            done
+            if [ -z "$tag" ]; then
+              echo "::error::No GitHub release found for '$INPUT_VERSION'. Create the release first (gh release create <tag>), then re-run this workflow."
+              exit 1
+            fi
+          fi
+
+          # The tag reaches `actions/checkout` and `gh`; keep it to characters a
+          # git ref can actually hold.
+          if ! [[ "$tag" =~ ^[A-Za-z0-9][A-Za-z0-9._/+-]*$ ]]; then
+            echo "::error::Refusing to build tag '$tag': unexpected characters."
+            exit 1
+          fi
+
+          version="${tag#v}"
+          echo "tag=$tag"         >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Release $tag, version $version"
+
+      - name: Check required secrets
+        env:
+          CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "$CERT_P12_BASE64" ]   || missing+=(MACOS_CERT_P12_BASE64)
+          [ -n "$CERT_P12_PASSWORD" ] || missing+=(MACOS_CERT_P12_PASSWORD)
+          [ -n "$SIGN_IDENTITY" ]     || missing+=(MACOS_SIGN_IDENTITY)
+          [ -n "$TEAM_ID" ]           || missing+=(APPLE_TEAM_ID)
+
+          if [ -n "$ASC_API_KEY_P8_BASE64" ]; then
+            [ -n "$ASC_API_KEY_ID" ]    || missing+=(ASC_API_KEY_ID)
+            [ -n "$ASC_API_ISSUER_ID" ] || missing+=(ASC_API_ISSUER_ID)
+          elif [ -n "$APPLE_ID" ]; then
+            [ -n "$APPLE_APP_PASSWORD" ] || missing+=(APPLE_APP_PASSWORD)
+          else
+            missing+=("ASC_API_KEY_P8_BASE64 + ASC_API_KEY_ID + ASC_API_ISSUER_ID (or APPLE_ID + APPLE_APP_PASSWORD)")
+          fi
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing repository secrets: ${missing[*]}"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v5
+        with:
+          # Build the tagged source, not whatever branch the dispatch ran from.
+          ref: ${{ steps.rel.outputs.tag }}
+          persist-credentials: false
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+
+      - name: Stage signing material
+        env:
+          CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p secrets
+
+          printf '%s' "$CERT_P12_BASE64" | base64 -d > "$CERT_P12"
+
+          if [ -n "$ASC_API_KEY_P8_BASE64" ]; then
+            key="secrets/AuthKey_${ASC_API_KEY_ID}.p8"
+            printf '%s' "$ASC_API_KEY_P8_BASE64" | base64 -d > "$key"
+            # Setting this makes the Makefile prefer the API key over APPLE_ID.
+            echo "ASC_API_KEY_FILE=$key" >> "$GITHUB_ENV"
+          fi
+
+      - name: Import signing certificate
+        run: |
+          set -euo pipefail
+          make keychain-import
+          # Pin codesign to the temporary build keychain rather than relying on
+          # the search list, so the identity can never be ambiguous.
+          echo "CODESIGN_KEYCHAIN=$HOME/Library/Keychains/macq-build.keychain-db" >> "$GITHUB_ENV"
+
+      - name: Check signing and notarization setup
+        # Credentials come from the environment here, so the "MISSING
+        # secrets/config.mk" line this prints is expected and harmless.
+        run: make doctor
+
+      - name: Build, sign, notarize and package
+        env:
+          VERSION: ${{ steps.rel.outputs.version }}
+          # CFBundleVersion. github.run_number is monotonic, so every release
+          # build gets a higher build number than the last.
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: make release VERSION="$VERSION" BUILD_NUMBER="$BUILD_NUMBER"
+
+      - name: Upload DMG to the release
+        env:
+          TAG: ${{ steps.rel.outputs.tag }}
+          VERSION: ${{ steps.rel.outputs.version }}
+          RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.rel.outputs.tag }}
+        run: |
+          set -euo pipefail
+          dmg="MacQ-${VERSION}.dmg"
+
+          if [ ! -f "artifacts/$dmg" ]; then
+            echo "::error::artifacts/$dmg was not produced."
+            ls -la artifacts || true
+            exit 1
+          fi
+
+          # Relative path inside the file so `shasum -c MacQ-x.y.z.dmg.sha256`
+          # works next to the downloaded DMG.
+          ( cd artifacts && shasum -a 256 "$dmg" > "$dmg.sha256" )
+
+          gh release upload "$TAG" "artifacts/$dmg" "artifacts/$dmg.sha256" \
+            -R "$GITHUB_REPOSITORY" --clobber
+
+          {
+            echo "### MacQ $VERSION"
+            echo
+            echo "Uploaded to [$TAG]($RELEASE_URL):"
+            echo
+            echo '```'
+            cat "artifacts/$dmg.sha256"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove signing material
+        if: always()
+        run: |
+          make keychain-remove || true
+          rm -f secrets/*.p12 secrets/*.p8

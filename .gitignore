@@ -1,0 +1,51 @@
+# Reverse-engineering artifacts (not for VCS: they contain material extracted
+# from BenQ's proprietary app)
+research/
+
+# Logs and OS cruft
+*.log
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Xcode build output / user state
+app/build/
+**/xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+DerivedData/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Release pipeline: build/ is intermediates (DerivedData, DMG staging, notary
+# receipts), artifacts/ is the finished .app/.dmg/.zip.
+/build/
+/artifacts/
+
+# Signing material and local release config. secrets/.gitignore also ignores
+# the directory's contents; this is a second line of defence.
+secrets/*
+!secrets/.gitignore
+!secrets/README.md
+!secrets/config.mk.example
+
+# Signing material anywhere, in case it lands outside secrets/
+*.p12
+*.pem
+*.key
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+AuthKey_*.p8
+
+# Editor / tooling
+.vscode/
+.idea/
+*.swp
