@@ -9,22 +9,31 @@ in [docs/benq-ddc-reference.md](docs/benq-ddc-reference.md).
 
 ## Features
 
-- Menu-bar popover listing the monitor's video sources (USB-C, HDMI 1, HDMI 2),
-  with the active source highlighted. Click one to switch the input (VCP `0x60`).
-- **Brightness slider** (VCP `0x10`).
-- **Volume slider** (VCP `0x62`, scaled to the max the monitor reports; the
-  MA320UP reports 50). Sliders update the display live, coalescing writes to
-  about 20 per second during a drag and writing the final value on release, and
-  appear only when the monitor advertises and answers that control.
-- Rename sources per monitor (Settings > Sources). Names persist.
-- **Launch at login** toggle (Settings > General), off by default, via
-  `SMAppService`.
-- Detects the external monitor and gates every control on DDC/CI being available.
-- Manual "Sync now" to re-query the monitor.
+- **Tiny memory footprint.** MacQ is a single native Swift process with no
+  bundled browser runtime. Display Pilot 2 ships Qt and QtWebEngine, an embedded
+  Chromium, and pays for it in resident memory.
+- **Under 5 MB on disk.** The whole app bundle is about 4 MB, against Display
+  Pilot 2's 863 MB, for the handful of controls you actually reach for.
+- **Lives in your menu bar.** One click to open the popover, one click to change
+  something, and it is out of your way again. MacQ shows a Dock icon only while
+  a window is open and drops back to menu-bar-only when they all close.
+- **Input switching.** The popover lists the monitor's video sources (USB-C,
+  HDMI 1, HDMI 2) with the active one highlighted. Click one to switch the input
+  (VCP `0x60`).
+- **Aliases for input sources.** Rename each source per monitor (Settings >
+  Sources) so the list reads "MacBook" and "Work PC" instead of "HDMI 1" and
+  "HDMI 2". Names persist.
+- **Brightness control** (VCP `0x10`) and **volume control** (VCP `0x62`, scaled
+  to the maximum the monitor reports; the MA320UP reports 50). Both sliders
+  update the display live, coalescing writes to about 20 per second during a drag
+  and writing the final value on release, and appear only when the monitor
+  advertises and answers that control.
+- **Auto launch at startup.** A launch-at-login toggle (Settings > General), off
+  by default, via `SMAppService`.
+- **Honest about what it can drive.** MacQ detects the external monitor and gates
+  every control on DDC/CI being available, with a manual "Sync now" to re-query
+  the monitor.
 - An onboarding window at launch explaining what MacQ does and where to find it.
-
-MacQ shows a Dock icon while any window is open and drops to menu-bar-only when
-they all close.
 
 On a MacBook with a notch, a crowded menu bar can hide new status items behind
 the notch. If you do not see the icon, quit some other menu-bar apps or use a
