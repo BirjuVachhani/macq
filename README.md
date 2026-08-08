@@ -28,11 +28,12 @@ in [docs/benq-ddc-reference.md](docs/benq-ddc-reference.md).
   update the display live, coalescing writes to about 20 per second during a drag
   and writing the final value on release, and appear only when the monitor
   advertises and answers that control.
-- **Keyboard media keys, on the monitor.** The brightness (F1, F2) and volume
-  (F10, F11, F12) keys drive the external monitor while it is the active display,
-  the way Display Pilot 2 behaves. Click a window on the monitor and the keys
-  change the monitor; go back to a window on the built-in display and they change
-  the Mac again. Off by default, and it needs Accessibility permission. See
+- **Keyboard media keys, on the monitor.** The brightness keys (F1, F2) change
+  whichever screen the mouse pointer is on, and the volume keys (F10, F11, F12)
+  change the monitor while it is the sound output device. Both are the rules
+  Display Pilot 2 ships. Move the pointer onto the monitor and F1/F2 dim the
+  monitor; move it back to the built-in screen and they dim the Mac. Off by
+  default, and it needs Accessibility permission. See
   [Keyboard media keys](#keyboard-media-keys).
 - **Auto launch at startup.** A launch-at-login toggle (Settings > General), off
   by default, via `SMAppService`.
@@ -50,22 +51,26 @@ menu-bar manager. The launch window is there so the app is always reachable.
 Off by default. Turn it on in Settings > Keyboard.
 
 With it on, MacQ intercepts the media keys before macOS sees them and applies
-them to the external monitor over DDC/CI while that monitor is the active
-display. "Active" means the display holding the focused window, falling back to
-the display under the pointer when nothing is focused. Move focus to a window on
-the built-in display and the keys reach macOS untouched, as usual.
+them to the external monitor over DDC/CI. A key that does not qualify is never
+touched, so the Mac keeps behaving normally.
 
-- **Brightness** (F1, F2) follows the active display.
+- **Brightness** (F1, F2) follows the mouse pointer: the keys change whichever
+  screen the pointer is currently on. This is exactly what Display Pilot 2 does
+  (its own settings text reads "Controlling the monitor brightness depends on the
+  mouse cursor position"), and it is instant, needs no permission of its own and
+  is never ambiguous about which screen you meant. Focused-window tracking is
+  kept only as a fallback for the moment the pointer is not over any display
+  MacQ knows about, such as mid-reconfiguration.
 - **Volume** (F11, F12) and **mute** (F10, VCP `0x8D`) always require the monitor
   to be the current sound output device. MacQ matches the display to its
   DisplayPort audio device by EDID UUID and never writes the monitor's volume or
   mute while the Mac is playing somewhere else: that is inaudible at best, and on
-  some panels it wakes their own speakers and their on-screen display. The rule
-  in Settings only chooses whether the focused window is an extra requirement on
-  top of that:
-  - *Whenever sound is playing through the monitor*, the default. Whichever
-    screen you are looking at, the keys go to the monitor while it is the
-    selected output.
+  some panels it wakes their own speakers and their on-screen display. Display
+  Pilot 2 draws the same line, describing its volume keys as acting on "the
+  selected audio output". The rule in Settings only chooses whether the pointer
+  is an extra requirement on top of that:
+  - *Whenever sound is playing through the monitor*, the default. Wherever the
+    pointer is, the keys go to the monitor while it is the selected output.
   - *Only while the monitor is also the active display*, for a desk where the
     monitor is the speaker but a lot of work happens on the built-in screen.
 - Under either rule, a key that does not qualify passes straight through, so the
@@ -73,8 +78,9 @@ the built-in display and the keys reach macOS untouched, as usual.
 - Intercepting a key also suppresses the system indicator, so MacQ draws its own
   level indicator on the monitor. That can be switched off too.
 
-The same gate covers the popover's volume slider, not just the keys, so it is
-dimmed while sound is coming from somewhere other than the monitor.
+This rule governs the keys only. The popover's volume slider always drives the
+monitor, whatever the Mac happens to be playing through, because dragging it is
+an explicit instruction about that panel.
 
 **Permission.** An intercepting event tap requires Accessibility (System Settings
 > Privacy & Security > Accessibility), not Input Monitoring. MacQ inspects only
@@ -84,6 +90,12 @@ the feature.
 **Limitation.** MacQ drives one external monitor at a time, the one it has bound
 to. If a different external display is the active one, its keys are left to
 macOS.
+
+**Diagnostics.** Settings > Keyboard ends with a live log of every media key MacQ
+sees and where it sent it, plus the display it currently considers active. It
+records only while that tab is open. A key that produces no line at all never
+reached MacQ, which is a different fault from one that reached MacQ and was
+passed to the Mac on purpose.
 
 ## Requirements
 
@@ -158,8 +170,9 @@ Core/
   MediaKeyTap.swift        CGEvent tap over NX_SYSDEFINED: decode a media key,
                            swallow it or pass it on, re-arm after a timeout
   MediaKeyRouter.swift     Decides who owns a keypress and applies it
-  ActiveDisplay.swift      Which display holds the focused window (Accessibility),
-                           resolved out of band and cached; pointer as fallback
+  ActiveDisplay.swift      Which display is active: the one under the pointer,
+                           with focused-window tracking (Accessibility) as a
+                           fallback, resolved out of band and cached
   AudioRouting.swift       Matches a display to its DisplayPort audio device by
                            EDID UUID, and tracks the default output device
   MediaKeyHUD.swift        Self-drawn level indicator (NSPanel) on the monitor

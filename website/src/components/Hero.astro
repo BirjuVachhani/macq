@@ -1,0 +1,33 @@
+---
+import SiteHeader from './SiteHeader.astro';
+import AppleGlyph from './AppleGlyph.astro';
+import { site } from '../site.config';
+---
+
+<main class="hero">
+  <SiteHeader />
+
+  <h1 class="headline">{site.headline}</h1>
+
+  <div class="cta">
+    <a class="download" href={site.download}>
+      <AppleGlyph height={20} />
+      <span>Download for macOS</span>
+    </a>
+    {site.releaseStage && <span class="alpha-pill">{site.releaseStage}</span>}
+    <span class="version">v{site.version}</span>
+  </div>
+
+  <p class="caption">{site.caption}</p>
+
+  <ul class="features">
+    {
+      site.features.map((feature) => (
+        <li class="feature">
+          <span class="feature-label">{feature.label}</span>
+          <span class="feature-desc">{feature.desc}</span>
+        </li>
+      ))
+    }
+  </ul>
+</main>

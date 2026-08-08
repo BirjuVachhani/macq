@@ -1,0 +1,42 @@
+---
+import BrandMark from './BrandMark.astro';
+import type { Shot } from '../lib/shots';
+
+interface Props {
+  shot: Shot;
+  /** 1-based, used only for the dev-only filename hint. */
+  index: number;
+}
+
+const { shot, index } = Astro.props;
+
+// The hint tells you where the file goes while you are working on the site. It
+// is stripped from production builds so visitors never see scaffolding.
+const showHint = import.meta.env.DEV;
+const hintName = `shots/${String(index).padStart(2, '0')}.png`;
+---
+
+{
+  shot.kind === 'video' && (
+    <div class="shot">
+      <video src={shot.src} autoplay muted loop playsinline preload="metadata" aria-label={shot.alt} />
+    </div>
+  )
+}
+
+{
+  shot.kind === 'image' && (
+    <div class="shot">
+      <img src={shot.src} alt={shot.alt} loading={index <= 2 ? 'eager' : 'lazy'} decoding="async" />
+    </div>
+  )
+}
+
+{
+  shot.kind === 'placeholder' && (
+    <div class:list={['shot', 'shot-placeholder', showHint && 'shot-placeholder-dev']}>
+      <BrandMark height={64} />
+      {showHint && <span class="shot-hint">{hintName}</span>}
+    </div>
+  )
+}

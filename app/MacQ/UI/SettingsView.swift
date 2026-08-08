@@ -6,6 +6,7 @@
 //  closing it returns MacQ to menu-bar-only.
 //
 
+import AppKit
 import SwiftUI
 import ServiceManagement
 
@@ -120,7 +121,7 @@ private struct KeyboardTab: View {
         Form {
             Section("Media keys") {
                 Toggle("Use keyboard brightness and volume keys on the monitor", isOn: $prefs.mediaKeysEnabled)
-                Text("When the monitor is the active display, the keys change the monitor over DDC/CI instead of the Mac.")
+                Text("Brightness follows the mouse pointer: F1 and F2 change whichever screen the pointer is on. Volume goes to the monitor while it is the sound output device.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 LabeledContent("Status", value: router.status.summary)
@@ -135,7 +136,7 @@ private struct KeyboardTab: View {
             }
 
             Section("Keys to intercept") {
-                Toggle("Brightness keys (F1, F2)", isOn: $prefs.brightnessKeysEnabled)
+                Toggle("Brightness keys (F1, F2), on the screen under the pointer", isOn: $prefs.brightnessKeysEnabled)
                     .disabled(!prefs.mediaKeysEnabled)
                 Toggle("Volume keys (F10, F11, F12)", isOn: $prefs.volumeKeysEnabled)
                     .disabled(!prefs.mediaKeysEnabled)
@@ -161,7 +162,7 @@ private struct KeyboardTab: View {
                 LabeledContent("Sound output", value: outputDevice ?? "Unknown")
                 LabeledContent("Monitor owns the sound",
                                value: controller.monitorIsAudioOutput ? "Yes" : "No")
-                Text("MacQ never changes the monitor's volume or mute while the Mac is playing somewhere else, whichever option is selected above. On some panels that would wake the monitor's own speakers.")
+                Text("This rule covers the keys only. The volume slider in the menu bar popover always drives the monitor, whatever the Mac is playing through.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -171,6 +172,8 @@ private struct KeyboardTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            KeyDiagnosticsSection()
         }
         .formStyle(.grouped)
         .onAppear {
@@ -181,6 +184,71 @@ private struct KeyboardTab: View {
             outputDevice = MonitorAudioBinding.shared.currentOutputDeviceName()
             controller.refreshAudioOutputState()
         }
+    }
+}
+
+/// Live view of the media-key pipeline: which display MacQ thinks is active, and
+/// what each keypress did.
+///
+/// This is the only way to tell apart the three ways a media key can appear to do
+/// nothing (the event never arrives, it arrives and is passed to macOS on
+/// purpose, or it is claimed and the panel ignores the DDC write). Recording runs
+/// only while this section is on screen.
+private struct KeyDiagnosticsSection: View {
+    @EnvironmentObject var controller: DisplayController
+    @ObservedObject private var diagnostics = MediaKeyDiagnostics.shared
+    @State private var activeSummary = ""
+
+    /// Focus and pointer both move without notifying us, so the summary is
+    /// re-read on a tick rather than observed.
+    private let tick = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        Section("Diagnostics") {
+            LabeledContent("Bound monitor",
+                           value: controller.display.map { "\($0.name), id \($0.id)" } ?? "None")
+            LabeledContent("Active display", value: activeSummary)
+
+            if diagnostics.entries.isEmpty {
+                Text("Press a brightness or volume key. Every media key MacQ sees is listed here with where it went. Nothing at all means the key never reached MacQ.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 1) {
+                        ForEach(diagnostics.entries.reversed()) { entry in
+                            Text("\(entry.timestamp)  \(entry.text)")
+                                .font(.system(size: 10, design: .monospaced))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .padding(4)
+                }
+                .frame(height: 140)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)))
+            }
+
+            HStack {
+                Button("Clear") { diagnostics.clear() }
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(diagnostics.transcript, forType: .string)
+                }
+                .disabled(diagnostics.entries.isEmpty)
+            }
+        }
+        .onAppear {
+            diagnostics.isRecording = true
+            refreshActive()
+        }
+        .onDisappear { diagnostics.isRecording = false }
+        .onReceive(tick) { _ in refreshActive() }
+    }
+
+    private func refreshActive() {
+        let current = ActiveDisplay.shared.currentDisplayID().map(String.init) ?? "unresolved"
+        activeSummary = "\(current)  (\(ActiveDisplay.shared.diagnostics()))"
     }
 }
 

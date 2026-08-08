@@ -6,12 +6,17 @@
 //  and answers one question per keypress: does this key belong to the external
 //  monitor, or to the Mac?
 //
-//  Brightness follows the active display, because brightness is a property of
-//  the screen you are looking at. Volume always requires the monitor to be the
-//  device macOS is playing through: changing a panel's volume while sound comes
-//  out of the Mac's speakers is silent at best, and on some panels wakes their
-//  own speakers. The user's rule only decides whether the focused window is an
+//  Brightness follows the display under the pointer, because brightness is a
+//  property of the screen you are looking at and pointing at it is how you say
+//  which one that is. Volume always requires the monitor to be the device macOS
+//  is playing through: changing a panel's volume while sound comes out of the
+//  Mac's speakers is silent at best, and on some panels wakes their own
+//  speakers. The user's rule only decides whether the active display is an
 //  additional requirement on top of that.
+//
+//  Both rules are the ones BenQ's Display Pilot 2 ships, which is the behaviour
+//  this was asked to match: brightness by cursor position, volume by selected
+//  audio output.
 //
 //  Main thread only. The tap's run-loop source lives on the main run loop, so
 //  every delegate callback arrives here on main and may touch DisplayController
@@ -188,47 +193,80 @@ final class MediaKeyRouter: ObservableObject, MediaKeyTapDelegate {
             return true
         }
 
-        guard shouldOwn(press) else {
+        switch route(press) {
+        case .monitor:
+            // Auto-repeat would otherwise flood the log and push the interesting
+            // first press of a hold off the top of it.
+            if !press.isRepeat { MediaKeyDiagnostics.shared.record("    to the monitor") }
+            ownedKeys.insert(press.key)
+            apply(press)
+            return true
+        case .passthrough(let reason):
             ownedKeys.remove(press.key)
+            if !press.isRepeat { MediaKeyDiagnostics.shared.record("    to macOS: \(reason)") }
             return false
         }
-        ownedKeys.insert(press.key)
-        apply(press)
-        return true
     }
 
     func mediaKeyTap(_ tap: MediaKeyTap, wasDisabledBy reason: MediaKeyTap.DisableReason) {
         NSLog("MacQ.MediaKeyRouter: tap disabled by \(reason.rawValue) and re-enabled")
+        MediaKeyDiagnostics.shared.record("tap disabled by \(reason.rawValue), re-enabled")
     }
 
     // MARK: - Routing
 
-    /// Whether this key belongs to the monitor. Every early return here means
-    /// "pass it through", so any uncertainty degrades to normal macOS behaviour
-    /// rather than to a key that appears dead.
-    private func shouldOwn(_ press: MediaKeyPress) -> Bool {
-        guard prefs.mediaKeysEnabled,
-              controller.availability.isAvailable,
-              let display = controller.display else { return false }
+    /// Where one key-down goes, with the reason attached. The reason is only ever
+    /// read by the diagnostics log, but carrying it forces every declining branch
+    /// to say something specific instead of returning a bare false.
+    private enum Routing {
+        case monitor
+        case passthrough(String)
+    }
+
+    /// Whether this key belongs to the monitor. Every `.passthrough` here means
+    /// "let macOS have it", so any uncertainty degrades to normal system
+    /// behaviour rather than to a key that appears dead.
+    private func route(_ press: MediaKeyPress) -> Routing {
+        guard prefs.mediaKeysEnabled else { return .passthrough("media keys are off") }
+        guard controller.availability.isAvailable else {
+            return .passthrough("monitor not controllable: \(controller.availability.reason ?? "unavailable")")
+        }
+        guard let display = controller.display else { return .passthrough("no external monitor bound") }
 
         if press.key.isBrightness {
-            guard prefs.brightnessKeysEnabled, controller.supportsBrightness else { return false }
-            // Brightness belongs to the screen being looked at, full stop. There
-            // is no audio-style ambiguity to resolve.
-            return ActiveDisplay.shared.isActive(display.id)
+            guard prefs.brightnessKeysEnabled else { return .passthrough("brightness keys are off") }
+            guard controller.supportsBrightness else {
+                return .passthrough("monitor did not answer brightness (VCP 0x10)")
+            }
+            // Brightness belongs to the screen being pointed at, full stop.
+            // There is no audio-style ambiguity to resolve.
+            guard ActiveDisplay.shared.isActive(display.id) else {
+                return .passthrough("pointer is not on monitor \(display.id); \(ActiveDisplay.shared.diagnostics())")
+            }
+            return .monitor
         }
 
-        guard prefs.volumeKeysEnabled, controller.supportsVolume else { return false }
-        if press.key == .mute && !controller.supportsMute { return false }
+        guard prefs.volumeKeysEnabled else { return .passthrough("volume keys are off") }
+        guard controller.supportsVolume else {
+            return .passthrough("monitor did not answer volume (VCP 0x62)")
+        }
+        if press.key == .mute && !controller.supportsMute {
+            return .passthrough("monitor did not answer mute (VCP 0x8D)")
+        }
 
         // Both rules require the monitor to be the current sound output device;
         // see VolumeRouting.decide. Anything else passes the key through, so a
         // wrong answer costs a normal macOS volume change rather than a DDC
         // write to a panel nobody is listening to.
-        let routing = VolumeRouting.decide(monitorIsActive: ActiveDisplay.shared.isActive(display.id),
+        let monitorIsActive = ActiveDisplay.shared.isActive(display.id)
+        let routing = VolumeRouting.decide(monitorIsActive: monitorIsActive,
                                            rule: prefs.volumeKeyRule,
                                            binding: MonitorAudioBinding.shared)
-        return routing == .monitor
+        guard routing == .monitor else {
+            let owns = MonitorAudioBinding.shared.isMonitorTheDefaultOutput()
+            return .passthrough("rule \"\(prefs.volumeKeyRule.title)\" not met; monitor owns sound=\(owns), monitor is active display=\(monitorIsActive)")
+        }
+        return .monitor
     }
 
     // MARK: - Applying
@@ -238,6 +276,10 @@ final class MediaKeyRouter: ObservableObject, MediaKeyTapDelegate {
         case .brightnessUp, .brightnessDown:
             brightnessStepper.handle(press)
             guard press.isDown else { return }
+            if !press.isRepeat {
+                MediaKeyDiagnostics.shared.record(
+                    "    brightness \(controller.brightness)/\(controller.brightnessMax), writing VCP 0x10")
+            }
             showHUD(.brightness, value: controller.brightness, maximum: controller.brightnessMax)
 
         case .volumeUp, .volumeDown:

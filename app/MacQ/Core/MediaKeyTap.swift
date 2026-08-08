@@ -229,6 +229,8 @@ final class MediaKeyTap {
         source = src
         isRunning = true
         NSLog("MacQ.MediaKeyTap: started")
+        MediaKeyDiagnostics.shared.record(
+            String(format: "tap armed: session tap, head insert, mask 0x%llX (systemDefined)", mask))
     }
 
     /// Disarms and fully disposes the tap. Idempotent, so a Settings toggle can
@@ -298,6 +300,41 @@ final class MediaKeyTap {
                              isRepeat: (keyFlags & NX.keyRepeatMask) == NX.keyRepeatMask,
                              modifiers: event.modifierFlags)
     }
+
+    /// Records the raw shape of a systemDefined event, including every one that
+    /// `decode` rejects.
+    ///
+    /// Deliberately placed before the decode filter: without it, "no brightness
+    /// event ever reached the tap" and "a brightness event reached the tap and
+    /// was passed through on purpose" produce exactly the same silence.
+    /// Costs nothing while diagnostics are off.
+    fileprivate static func diagnose(_ cgEvent: CGEvent) {
+        guard MediaKeyDiagnostics.shared.isRecording else { return }
+        let log = MediaKeyDiagnostics.shared
+
+        // Same precondition as decode: subtype/data1 on a non-compound event
+        // raises an uncatchable Objective-C exception.
+        guard cgEvent.type.rawValue == NX.sysDefined else { return }
+        guard let event = NSEvent(cgEvent: cgEvent) else {
+            log.record("systemDefined event that will not convert to NSEvent")
+            return
+        }
+
+        let subtype = event.subtype.rawValue
+        guard subtype == NX.subtypeAuxControlButtons else {
+            log.record("systemDefined subtype \(subtype), not an aux-control key")
+            return
+        }
+
+        let data1 = Int64(event.data1)
+        let keyCode = Int((data1 & NX.keyCodeMask) >> NX.keyCodeShift)
+        let keyFlags = data1 & NX.keyFlagsMask
+        let down = ((keyFlags & NX.keyStateMask) >> NX.keyStateShift) == NX.keyStateDown
+        let isRepeat = (keyFlags & NX.keyRepeatMask) == NX.keyRepeatMask
+
+        let name = MediaKey(nxKeyType: keyCode).map { "\($0)" } ?? "NX keyCode \(keyCode), not handled"
+        log.record("\(name) \(down ? "down" : "up")\(isRepeat ? " (repeat)" : "")")
+    }
 }
 
 // MARK: - C callback
@@ -330,8 +367,9 @@ private func mediaKeyTapCallback(proxy: CGEventTapProxy,
         break
     }
 
-    guard type.rawValue == NX.sysDefined,
-          let press = MediaKeyTap.decode(event) else { return passthrough }
+    guard type.rawValue == NX.sysDefined else { return passthrough }
+    MediaKeyTap.diagnose(event)
+    guard let press = MediaKeyTap.decode(event) else { return passthrough }
     return tap.askDelegate(press) ? nil : passthrough
 }
 

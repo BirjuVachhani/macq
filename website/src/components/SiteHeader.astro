@@ -1,0 +1,27 @@
+---
+import BrandMark from './BrandMark.astro';
+import { site } from '../site.config';
+---
+
+<header class="site-header">
+  <a class="brand" href="/" aria-label={site.name}>
+    <BrandMark class="brand-mark" height={22} />
+    <span class="brand-word">{site.name}</span>
+    <span class="brand-rule" aria-hidden="true"></span>
+  </a>
+
+  <nav class="site-nav">
+    {
+      site.nav.map((item) => (
+        <a
+          class:list={['pill', item.style === 'outline' ? 'pill-outline' : 'pill-ghost']}
+          href={item.href}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {item.label}
+        </a>
+      ))
+    }
+  </nav>
+</header>

@@ -1,0 +1,112 @@
+<!doctype html>
+<!--
+  Source for public/og.png, the Open Graph card.
+
+  Rendered at 1200x630 by `npm run og`, which drives headless Chrome. Edit this
+  file and re-run that script; do not hand-edit the PNG.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        --bg: #121212;
+        --ink: #fff;
+        --ink-50: #ffffff80;
+        --accent: #8fc400;
+        --font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        width: 1200px;
+        height: 630px;
+        padding: 72px;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--font);
+        line-height: 1;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+
+      .brand img {
+        width: 96px;
+        height: 96px;
+      }
+
+      .brand-word {
+        font-size: 44px;
+        font-weight: 500;
+        letter-spacing: -0.02em;
+      }
+
+      .brand-rule {
+        width: 4px;
+        height: 52px;
+        background: var(--accent);
+      }
+
+      .headline {
+        max-width: 900px;
+        margin: 0;
+        font-size: 62px;
+        font-weight: 400;
+        letter-spacing: -0.02em;
+        line-height: 1.08;
+      }
+
+      .meta {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--ink-50);
+        font-size: 22px;
+        font-weight: 500;
+      }
+
+      .dot {
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: var(--ink-50);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="brand">
+      <img src="../public/favicon.png" alt="" />
+      <span class="brand-word">MacQ</span>
+      <span class="brand-rule"></span>
+    </div>
+
+    <h1 class="headline">
+      Fast and lightweight menu-bar control for your BenQ monitor
+    </h1>
+
+    <div class="meta">
+      <span>macq.birju.dev</span>
+      <span class="dot"></span>
+      <span>Free and open source</span>
+      <span class="dot"></span>
+      <span>macOS 14+</span>
+    </div>
+  </body>
+</html>

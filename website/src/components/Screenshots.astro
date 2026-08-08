@@ -1,0 +1,10 @@
+---
+import Shot from './Shot.astro';
+import { loadShots } from '../lib/shots';
+
+const shots = loadShots();
+---
+
+<aside class="screenshots" aria-label="MacQ screenshots">
+  {shots.map((shot, i) => <Shot shot={shot} index={i + 1} />)}
+</aside>

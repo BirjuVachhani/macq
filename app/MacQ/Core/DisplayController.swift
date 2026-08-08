@@ -38,9 +38,13 @@ final class DisplayController: ObservableObject {
     @Published private(set) var supportsMute = false
     @Published private(set) var isMuted = false
 
-    /// Whether macOS is currently playing through this monitor. Every audio VCP
-    /// write is gated on a live re-read of this; the published copy exists so
-    /// the UI can explain why the volume control is inert.
+    /// Whether macOS is currently playing through this monitor.
+    ///
+    /// This is routing information, not permission. It decides whether the
+    /// keyboard's volume keys are aimed at the monitor (see VolumeRouting), and
+    /// it is shown in Settings so that rule is legible. It deliberately does not
+    /// gate anything in this class: an explicit slider drag is a direct
+    /// instruction about the monitor's volume and is always obeyed.
     @Published private(set) var monitorIsAudioOutput = false
 
     private let aliasStore = AliasStore()
@@ -53,9 +57,6 @@ final class DisplayController: ObservableObject {
     /// Queue-confined mirror of `supportsMute`. The value poll runs on this
     /// queue and must not read the main-thread @Published copy.
     private var pollMute = false
-    /// Queue-confined. True once 0x8D has been answered for the bound display,
-    /// so taking over the sound output does not re-probe on every flip.
-    private var pollMuteProbed = false
 
     // Slider write coalescing + guards against a sync overwriting an active drag.
     private lazy var brightnessThrottle = Throttle(0.05)
@@ -70,8 +71,8 @@ final class DisplayController: ObservableObject {
     init() {
         registerReconfigurationCallback()
         // The sound output device can change with no involvement from MacQ, and
-        // it decides whether MacQ may touch the monitor's audio VCPs at all, so
-        // it is tracked rather than sampled only at refresh time.
+        // it decides where the keyboard's volume keys are aimed, so it is
+        // tracked rather than sampled only at refresh time.
         audioOutputObserver = NotificationCenter.default.addObserver(
             forName: MonitorAudioBinding.defaultOutputDeviceDidChange,
             object: nil,
@@ -108,7 +109,6 @@ final class DisplayController: ObservableObject {
                 self.boundDisplayID = nil
                 self.caps = nil
                 self.pollMute = false
-                self.pollMuteProbed = false
                 MonitorAudioBinding.shared.bind(to: nil)
                 self.publish {
                     self.display = nil
@@ -137,13 +137,11 @@ final class DisplayController: ObservableObject {
                 self.ddc = DisplayDiscovery.ddc(for: chosen)
                 self.boundDisplayID = (self.ddc != nil) ? chosen.id : nil
                 self.caps = nil
-                self.pollMuteProbed = false
             }
 
             guard let ddc = self.ddc else {
                 NSLog("MacQ.refresh: no DDC link for \(chosen.name)")
                 self.pollMute = false
-                self.pollMuteProbed = false
                 self.publish {
                     self.availability = .ddcUnavailable
                     self.sources = BenQProfile.inputSources(from: nil)
@@ -173,17 +171,15 @@ final class DisplayController: ObservableObject {
             let supportsB = (self.caps?.supports(VCP.brightness) ?? false) || bReading != nil
             let supportsV = (self.caps?.supports(VCP.audioVolume) ?? false) || vReading != nil
 
-            // 0x8D is probed only when the monitor is BOTH capable of volume and
-            // the device macOS is playing through. Touching a panel's audio
-            // controls while the sound is somewhere else is what the audio gate
-            // exists to prevent, and every skipped probe is also a DDC round
-            // trip (up to ~1s with retries) saved on every refresh.
-            let audioIsOurs = MonitorAudioBinding.shared.isMonitorTheDefaultOutput()
-            let mReading = (supportsV && audioIsOurs) ? ddc.getVCP(VCP.audioMute) : nil
+            // 0x8D is probed whenever the monitor answers for volume at all. It
+            // is a read, so it costs one DDC round trip and changes nothing on
+            // the panel. Whether MacQ should *write* the panel's audio is a
+            // routing question, answered per keypress in VolumeRouting, not here.
+            let mReading = supportsV ? ddc.getVCP(VCP.audioMute) : nil
             let supportsM = mReading != nil
             let muted = mReading.map { $0.current == VCPValue.muteOn } ?? false
-            self.pollMute = supportsM && audioIsOurs
-            if supportsM { self.pollMuteProbed = true }
+            self.pollMute = supportsM
+            let audioIsOurs = MonitorAudioBinding.shared.isMonitorTheDefaultOutput()
 
             let controllable = (reading != nil) || (bReading != nil) || (vReading != nil) || (self.caps != nil)
             let activeValue = reading.map { UInt8($0.current & 0xFF) }
@@ -204,13 +200,8 @@ final class DisplayController: ObservableObject {
                     if !self.editingVolume { self.volume = Int(vReading.current) }
                 }
                 self.monitorIsAudioOutput = audioIsOurs
-                // supportsMute is knowledge, not permission: it is only learned
-                // while the monitor owns the sound, and it is never unlearned,
-                // because the write paths are gated separately.
-                if audioIsOurs {
-                    self.supportsMute = supportsM
-                    if supportsM { self.isMuted = muted }
-                }
+                self.supportsMute = supportsM
+                if supportsM { self.isMuted = muted }
                 self.isBusy = false
                 self.lastSyncText = self.stamp(controllable ? "Synced" : "DDC/CI not responding")
             }
@@ -273,16 +264,12 @@ final class DisplayController: ObservableObject {
     /// the already-bound display. No re-detection or capabilities read. Used by
     /// the periodic poll while the popover is open; skips values being dragged.
     func syncValues() {
-        // Called from the popover's timer on the main thread. The published
-        // audio-output flag is read here, on main, and captured: the DDC queue
-        // must not touch main-thread state.
-        let audioIsOurs = monitorIsAudioOutput
         queue.async { [weak self] in
             guard let self, let ddc = self.ddc else { return }
             let input = ddc.getVCP(VCP.inputSource)
             let b = (self.caps?.supports(VCP.brightness) ?? true) ? ddc.getVCP(VCP.brightness) : nil
             let v = (self.caps?.supports(VCP.audioVolume) ?? true) ? ddc.getVCP(VCP.audioVolume) : nil
-            let m = (self.pollMute && audioIsOurs) ? ddc.getVCP(VCP.audioMute) : nil
+            let m = self.pollMute ? ddc.getVCP(VCP.audioMute) : nil
             self.publish {
                 if let input { self.activeInputReadValue = UInt8(input.current & 0xFF) }
                 if let b, !self.editingBrightness {
@@ -316,61 +303,27 @@ final class DisplayController: ObservableObject {
         brightnessThrottle.flush() // guarantee the final value is written
     }
 
-    // MARK: - Audio ownership
+    // MARK: - Audio routing
 
-    /// Whether MacQ may write the monitor's audio VCPs (0x62 volume, 0x8D mute)
-    /// right now.
+    /// Re-reads whether macOS is playing through the monitor. Main thread only;
+    /// a live CoreAudio read costs roughly 13 us, so a UI tick may call it.
     ///
-    /// Deliberately a live CoreAudio read (roughly 13 us) rather than the
-    /// published flag: this is the last line of defence and it must not be
-    /// answered from anything that could be stale. Every audio write in the app
-    /// goes through it, not just the media-key path. The popover slider used to
-    /// write 0x62 with no routing check at all, which is the one way MacQ could
-    /// make a monitor it is not playing through light up its own on-screen
-    /// display and start making noise.
-    private func audioWritesArePermitted() -> Bool {
-        MonitorAudioBinding.shared.isMonitorTheDefaultOutput()
-    }
-
-    /// Re-reads whether the monitor owns the sound, and probes 0x8D once if the
-    /// monitor has just taken it over. Main thread only; cheap enough to call
-    /// from a UI tick.
+    /// Purely informational. It feeds the Settings row that explains the volume
+    /// key rule, and nothing in this class consults it before writing.
     func refreshAudioOutputState() {
         dispatchPrecondition(condition: .onQueue(.main))
-        let isOurs = audioWritesArePermitted()
+        let isOurs = MonitorAudioBinding.shared.isMonitorTheDefaultOutput()
         guard isOurs != monitorIsAudioOutput else { return }
         monitorIsAudioOutput = isOurs
-        guard isOurs else {
-            // Nothing to probe and nothing to write while the Mac owns the
-            // sound. supportsMute is left alone so the UI does not flicker.
-            queue.async { [weak self] in self?.pollMute = false }
-            return
-        }
-        queue.async { [weak self] in
-            guard let self, let ddc = self.ddc else { return }
-            // pollMuteProbed true means 0x8D has already been answered for this
-            // display, so the poll just resumes. Without this the output could
-            // only be handed to the monitor once: every later handover would
-            // find the probe already done and leave pollMute false forever.
-            guard !self.pollMuteProbed else {
-                self.pollMute = true
-                return
-            }
-            guard let reading = ddc.getVCP(VCP.audioMute) else { return }
-            self.pollMute = true
-            self.pollMuteProbed = true
-            let muted = reading.current == VCPValue.muteOn
-            self.publish {
-                self.supportsMute = true
-                if !self.editingMute { self.isMuted = muted }
-            }
-        }
     }
 
+    /// Sets the monitor's speaker volume (0...volumeMax, VCP 0x62).
+    ///
+    /// Never gated on the sound output device. Reaching this method means the
+    /// user aimed at the monitor's volume specifically, by dragging its slider,
+    /// or via a media key that MediaKeyRouter already decided belongs to the
+    /// monitor. Re-litigating that here would only make the slider inert.
     func setVolume(_ value: Int) {
-        // Gate first, before the published value moves: refusing the write but
-        // still showing the new number would make the UI lie about the panel.
-        guard audioWritesArePermitted() else { return }
         let clamped = max(0, min(volumeMax, value))
         volume = clamped
         // Raising the volume unmutes, the way macOS's own volume keys do, but
@@ -415,7 +368,7 @@ final class DisplayController: ObservableObject {
 
     /// Mutes or unmutes the monitor's own speakers (VCP 0x8D).
     func setMute(_ muted: Bool) {
-        guard supportsMute, audioWritesArePermitted() else { return }
+        guard supportsMute else { return }
         isMuted = muted
         holdMuteState()
         writeVCP(VCP.audioMute, muted ? VCPValue.muteOn : VCPValue.muteOff)

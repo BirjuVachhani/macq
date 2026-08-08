@@ -2,8 +2,13 @@
 //  ActiveDisplay.swift
 //  MacQ
 //
-//  Resolves which display is "active": the one holding the focused window, with
-//  the display under the pointer as the fallback.
+//  Resolves which display is "active": the one under the mouse pointer, with the
+//  display holding the focused window as the fallback for the rare moment the
+//  pointer is not over any known display.
+//
+//  Pointer first is deliberate and matches BenQ's Display Pilot 2, whose own
+//  settings text reads "Controlling the monitor brightness depends on the mouse
+//  cursor position". See the long note in `currentDisplayID()`.
 //
 //  THREADING CONTRACT
 //    - `currentDisplayID()` and `isActive(_:)` are safe from any thread,
@@ -32,10 +37,9 @@ final class ActiveDisplay {
     /// this. The notifications normally keep it far fresher; this is the net.
     private let refreshAfter: TimeInterval = 0.25
 
-    /// Past this age the cached focus answer is not trusted at all and the
-    /// pointer answers instead. Only reachable when every invalidation source
-    /// has failed, for instance a frontmost app that exposes no AX and never
-    /// activates again.
+    /// Past this age the cached focus answer is not trusted at all. Only
+    /// consulted on the fallback path, when the pointer is not inside any known
+    /// display.
     private let distrustAfter: TimeInterval = 5.0
 
     /// Per-element AX messaging timeout. The process-wide default is multiple
@@ -111,13 +115,27 @@ final class ActiveDisplay {
 
         if shouldRefresh { axQueue.async { [weak self] in self?.recomputeFocus() } }
 
-        // A fresh-enough focus answer wins.
-        if focusID != 0, age <= distrustAfter { return focusID }
-
-        // Otherwise the pointer decides. That covers "no focused window
-        // resolves" and also a wedged AX path.
+        // The pointer decides.
+        //
+        // This is the rule BenQ's own Display Pilot 2 uses, and it tells its
+        // users so in as many words: "Controlling the monitor brightness depends
+        // on the mouse cursor position." Its DpBrightnessIKeyboard::handleKeyEvent
+        // is literally QGuiApplication::screenAt(QCursor::pos()) matched against
+        // its monitor list, with no window or focus involved.
+        //
+        // Focus used to win here and it was the wrong choice. It is asynchronous,
+        // so it lags a screen change by up to a refresh interval; it resolves to
+        // nothing useful whenever MacQ itself, a menu or a full-screen app is
+        // frontmost; and it needs Accessibility to answer at all. Worst of all it
+        // was trusted for a further five seconds after it resolved, during which
+        // moving the mouse to the other screen changed nothing. Pointing at a
+        // screen is also the gesture people already have from Display Pilot 2,
+        // and it is instant, permission-free and never ambiguous.
         if let byPointer = pointerDisplayID(in: layout) { return byPointer }
 
+        // Only reached when the pointer is not inside any display MacQ knows
+        // about, which in practice means the layout is mid-reconfiguration.
+        if focusID != 0, age <= distrustAfter { return focusID }
         if focusID != 0 { return focusID }
         return stickyID != 0 ? stickyID : nil
     }
@@ -143,8 +161,9 @@ final class ActiveDisplay {
             : String(format: "%.0fms",
                      Double(DispatchTime.now().uptimeNanoseconds &- snap.focusStamp) / 1e6)
         let pointer = pointerDisplayID(in: snap.layout).map(String.init) ?? "nil"
-        return "trusted=\(AXIsProcessTrusted()) focus=\(snap.focusID) age=\(age) "
-             + "sticky=\(snap.stickyID) pointer=\(pointer) observing=\(observedPID)"
+        // Pointer first: it is what currentDisplayID() answers with.
+        return "pointer=\(pointer) focus=\(snap.focusID) age=\(age) "
+             + "sticky=\(snap.stickyID) trusted=\(AXIsProcessTrusted()) observing=\(observedPID)"
     }
 
     // MARK: - Lifecycle (main thread)

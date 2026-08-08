@@ -100,12 +100,6 @@ struct MenuContent: View {
                         editing ? controller.beginEditingVolume() : controller.endEditingVolume()
                     }
                 )
-                .disabled(!controller.monitorIsAudioOutput)
-                if !controller.monitorIsAudioOutput {
-                    Text("Sound is not playing through this monitor, so its volume is left alone.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             }
         }
     }
