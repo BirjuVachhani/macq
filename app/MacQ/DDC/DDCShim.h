@@ -42,4 +42,25 @@ NS_ASSUME_NONNULL_BEGIN
 
 @end
 
+/// Display identity read straight from the IORegistry, for joining a display to
+/// other subsystems that key on the same value.
+@interface DisplayIdentity : NSObject
+
+/// The display's `EDID UUID` string, for example
+/// `09D13581-0000-0000-2E23-0104B5462778`, or `nil` when the node does not
+/// publish one (some adapters, KVMs and virtual displays).
+///
+/// This is the exact string CoreAudio reports as a DisplayPort/HDMI audio
+/// device's `kAudioDevicePropertyDeviceUID`, which makes it an exact join
+/// between a display and its audio endpoint rather than a heuristic.
+///
+/// Note it is NOT the raw EDID bytes 8...23: bytes 12...15 (the binary serial
+/// number) are zeroed, which is why two units of the same model bought in the
+/// same week can share one. Good enough to answer "is this monitor the current
+/// sound output", not a unique per-unit key.
++ (nullable NSString *)edidUUIDForDisplayID:(CGDirectDisplayID)displayID
+    NS_SWIFT_NAME(edidUUID(displayID:));
+
+@end
+
 NS_ASSUME_NONNULL_END

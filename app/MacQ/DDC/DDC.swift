@@ -25,6 +25,14 @@ enum VCP {
     static let autoInputSwitch: UInt8 = 0xF6
 }
 
+/// Discrete VCP values whose meaning is not obvious from the number.
+enum VCPValue {
+    /// MCCS defines audio mute (0x8D) as 0x01 = muted, 0x02 = not muted. Note
+    /// the polarity: 0 is not a valid value, and 2 is the "off" state.
+    static let muteOn: UInt16 = 0x01
+    static let muteOff: UInt16 = 0x02
+}
+
 /// A DDC/CI "Get VCP Feature" reply.
 struct VCPReading {
     let current: UInt16

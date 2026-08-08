@@ -18,6 +18,12 @@
 		A5583E7701CA7A5E10000002 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A5583E7701CA7A5E10000001 /* Assets.xcassets */; };
 		A5583E7701CA7A5E10000011 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5583E7701CA7A5E10000010 /* MainWindowView.swift */; };
 		A5583E7701CA7A5E10000021 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = A5583E7701CA7A5E10000020 /* AppIcon.icon */; };
+		A5583E7701CA7A5E30000001 /* ActiveDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5583E7701CA7A5E20000001 /* ActiveDisplay.swift */; };
+		A5583E7701CA7A5E30000002 /* AudioRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5583E7701CA7A5E20000002 /* AudioRouting.swift */; };
+		A5583E7701CA7A5E30000003 /* MediaKeyHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5583E7701CA7A5E20000003 /* MediaKeyHUD.swift */; };
+		A5583E7701CA7A5E30000004 /* MediaKeyRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5583E7701CA7A5E20000004 /* MediaKeyRouter.swift */; };
+		A5583E7701CA7A5E30000005 /* MediaKeyTap.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5583E7701CA7A5E20000005 /* MediaKeyTap.swift */; };
+		A5583E7701CA7A5E30000006 /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5583E7701CA7A5E20000006 /* Preferences.swift */; };
 		E11D304B3B91929BB384868A /* MenuContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87650A366B75DC0D01BDE381 /* MenuContent.swift */; };
 		E6129585D26F6A7E517B3141 /* DDCShim.m in Sources */ = {isa = PBXBuildFile; fileRef = DE7651A27BC69C714E8429A1 /* DDCShim.m */; };
 		EC96FFB2A4FF5CBA455324BE /* BenQProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = B79FB23B9E469C1E052F24EC /* BenQProfile.swift */; };
@@ -36,6 +42,12 @@
 		A5583E7701CA7A5E10000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A5583E7701CA7A5E10000010 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
 		A5583E7701CA7A5E10000020 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
+		A5583E7701CA7A5E20000001 /* ActiveDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveDisplay.swift; sourceTree = "<group>"; };
+		A5583E7701CA7A5E20000002 /* AudioRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRouting.swift; sourceTree = "<group>"; };
+		A5583E7701CA7A5E20000003 /* MediaKeyHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaKeyHUD.swift; sourceTree = "<group>"; };
+		A5583E7701CA7A5E20000004 /* MediaKeyRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaKeyRouter.swift; sourceTree = "<group>"; };
+		A5583E7701CA7A5E20000005 /* MediaKeyTap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaKeyTap.swift; sourceTree = "<group>"; };
+		A5583E7701CA7A5E20000006 /* Preferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Preferences.swift; sourceTree = "<group>"; };
 		AB9B1FE428CEE84560772E2E /* MacQ-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "MacQ-Bridging-Header.h"; sourceTree = "<group>"; };
 		B79FB23B9E469C1E052F24EC /* BenQProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenQProfile.swift; sourceTree = "<group>"; };
 		B989B570CF6D93895F1E9340 /* Capabilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Capabilities.swift; sourceTree = "<group>"; };
@@ -74,12 +86,18 @@
 		33566549474F28366E970A01 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				A5583E7701CA7A5E20000001 /* ActiveDisplay.swift */,
 				C0235092855865D0753E1A0B /* AliasStore.swift */,
+				A5583E7701CA7A5E20000002 /* AudioRouting.swift */,
 				B79FB23B9E469C1E052F24EC /* BenQProfile.swift */,
 				B989B570CF6D93895F1E9340 /* Capabilities.swift */,
 				FB2EA7AC5E021DF124C46A90 /* DisplayController.swift */,
 				2096018ACFFBEA486DD2F89E /* DisplayDiscovery.swift */,
+				A5583E7701CA7A5E20000003 /* MediaKeyHUD.swift */,
+				A5583E7701CA7A5E20000004 /* MediaKeyRouter.swift */,
+				A5583E7701CA7A5E20000005 /* MediaKeyTap.swift */,
 				93DDF6E9AB9BB2CED8EF04D9 /* Models.swift */,
+				A5583E7701CA7A5E20000006 /* Preferences.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -186,17 +204,23 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A5583E7701CA7A5E30000001 /* ActiveDisplay.swift in Sources */,
 				46FB8B2D9F1D94FB9BB7FB9D /* AliasStore.swift in Sources */,
 				7645AE4E403609DECE0B2C32 /* AppDelegate.swift in Sources */,
+				A5583E7701CA7A5E30000002 /* AudioRouting.swift in Sources */,
 				EC96FFB2A4FF5CBA455324BE /* BenQProfile.swift in Sources */,
 				154D314CF3A1EC8BE5608D6B /* Capabilities.swift in Sources */,
 				6F8CF93C7CA82F9482C7BFF9 /* DDC.swift in Sources */,
 				E6129585D26F6A7E517B3141 /* DDCShim.m in Sources */,
 				124AC851E16E586BAD4DCB17 /* DisplayController.swift in Sources */,
 				8F4117E4490174057A58B942 /* DisplayDiscovery.swift in Sources */,
+				A5583E7701CA7A5E30000003 /* MediaKeyHUD.swift in Sources */,
+				A5583E7701CA7A5E30000004 /* MediaKeyRouter.swift in Sources */,
+				A5583E7701CA7A5E30000005 /* MediaKeyTap.swift in Sources */,
 				E11D304B3B91929BB384868A /* MenuContent.swift in Sources */,
 				A5583E7701CA7A5E10000011 /* MainWindowView.swift in Sources */,
 				1A8275332E8DCC62E5CEA405 /* Models.swift in Sources */,
+				A5583E7701CA7A5E30000006 /* Preferences.swift in Sources */,
 				FB011A1563FE6BED4FB1D09A /* SettingsView.swift in Sources */,
 				32BF666F99BB7D2FAE73D179 /* main.swift in Sources */,
 			);
@@ -363,6 +387,10 @@
 					CoreDisplay,
 					"-framework",
 					AppKit,
+					"-framework",
+					CoreAudio,
+					"-framework",
+					ApplicationServices,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.birjuvachhani.macq;
 				PRODUCT_NAME = MacQ;
@@ -395,6 +423,10 @@
 					CoreDisplay,
 					"-framework",
 					AppKit,
+					"-framework",
+					CoreAudio,
+					"-framework",
+					ApplicationServices,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "dev.birjuvachhani.macq-debug232";
 				PRODUCT_NAME = MacQ;

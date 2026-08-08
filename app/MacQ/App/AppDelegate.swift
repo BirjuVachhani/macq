@@ -20,11 +20,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     func applicationDidFinishLaunching(_ notification: Notification) {
         setUpStatusItem()
         setUpPopover()
+        setUpMediaKeys()
         showMainWindow() // greet the user with a window on launch
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false // menu-bar app: closing a window must not quit it
+    }
+
+    // MARK: - Media keys
+
+    private func setUpMediaKeys() {
+        MediaKeyRouter.shared.start()
+
+        // An event tap does not survive these transitions. It is silently
+        // destroyed rather than disabled, so there is no tapDisabled callback to
+        // recover from and the keys would simply stop working until relaunch.
+        let wc = NSWorkspace.shared.notificationCenter
+        for name: NSNotification.Name in [NSWorkspace.didWakeNotification,
+                                          NSWorkspace.sessionDidBecomeActiveNotification,
+                                          NSWorkspace.screensDidWakeNotification] {
+            wc.addObserver(self, selector: #selector(restartMediaKeys), name: name, object: nil)
+        }
+    }
+
+    @objc private func restartMediaKeys() {
+        MediaKeyRouter.shared.restart()
     }
 
     // MARK: - Status item

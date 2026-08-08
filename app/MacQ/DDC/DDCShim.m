@@ -156,3 +156,27 @@ static io_service_t CopyAdapterForDisplay(CGDirectDisplayID displayID) {
 }
 
 @end
+
+// --- DisplayIdentity ---------------------------------------------------------
+
+@implementation DisplayIdentity
+
++ (nullable NSString *)edidUUIDForDisplayID:(CGDirectDisplayID)displayID {
+    io_service_t adapter = CopyAdapterForDisplay(displayID);
+    if (adapter == MACH_PORT_NULL) return nil;
+
+    // Searched recursively because the property sits on the AppleCLCD2 node
+    // below the adapter, not on the adapter itself.
+    CFTypeRef value = CopySearchProperty(adapter, CFSTR("EDID UUID"));
+    IOObjectRelease(adapter);
+
+    if (value == NULL) return nil;
+    NSString *uuid = nil;
+    if (CFGetTypeID(value) == CFStringGetTypeID()) {
+        uuid = [NSString stringWithString:(__bridge NSString *)value];
+    }
+    CFRelease(value);
+    return uuid;
+}
+
+@end

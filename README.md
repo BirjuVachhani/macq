@@ -28,6 +28,12 @@ in [docs/benq-ddc-reference.md](docs/benq-ddc-reference.md).
   update the display live, coalescing writes to about 20 per second during a drag
   and writing the final value on release, and appear only when the monitor
   advertises and answers that control.
+- **Keyboard media keys, on the monitor.** The brightness (F1, F2) and volume
+  (F10, F11, F12) keys drive the external monitor while it is the active display,
+  the way Display Pilot 2 behaves. Click a window on the monitor and the keys
+  change the monitor; go back to a window on the built-in display and they change
+  the Mac again. Off by default, and it needs Accessibility permission. See
+  [Keyboard media keys](#keyboard-media-keys).
 - **Auto launch at startup.** A launch-at-login toggle (Settings > General), off
   by default, via `SMAppService`.
 - **Honest about what it can drive.** MacQ detects the external monitor and gates
@@ -39,12 +45,54 @@ On a MacBook with a notch, a crowded menu bar can hide new status items behind
 the notch. If you do not see the icon, quit some other menu-bar apps or use a
 menu-bar manager. The launch window is there so the app is always reachable.
 
+## Keyboard media keys
+
+Off by default. Turn it on in Settings > Keyboard.
+
+With it on, MacQ intercepts the media keys before macOS sees them and applies
+them to the external monitor over DDC/CI while that monitor is the active
+display. "Active" means the display holding the focused window, falling back to
+the display under the pointer when nothing is focused. Move focus to a window on
+the built-in display and the keys reach macOS untouched, as usual.
+
+- **Brightness** (F1, F2) follows the active display.
+- **Volume** (F11, F12) and **mute** (F10, VCP `0x8D`) always require the monitor
+  to be the current sound output device. MacQ matches the display to its
+  DisplayPort audio device by EDID UUID and never writes the monitor's volume or
+  mute while the Mac is playing somewhere else: that is inaudible at best, and on
+  some panels it wakes their own speakers and their on-screen display. The rule
+  in Settings only chooses whether the focused window is an extra requirement on
+  top of that:
+  - *Whenever sound is playing through the monitor*, the default. Whichever
+    screen you are looking at, the keys go to the monitor while it is the
+    selected output.
+  - *Only while the monitor is also the active display*, for a desk where the
+    monitor is the speaker but a lot of work happens on the built-in screen.
+- Under either rule, a key that does not qualify passes straight through, so the
+  Mac's own volume keeps responding normally.
+- Intercepting a key also suppresses the system indicator, so MacQ draws its own
+  level indicator on the monitor. That can be switched off too.
+
+The same gate covers the popover's volume slider, not just the keys, so it is
+dimmed while sound is coming from somewhere other than the monitor.
+
+**Permission.** An intercepting event tap requires Accessibility (System Settings
+> Privacy & Security > Accessibility), not Input Monitoring. MacQ inspects only
+the brightness, volume and mute keys, and installs no tap at all until you enable
+the feature.
+
+**Limitation.** MacQ drives one external monitor at a time, the one it has bound
+to. If a different external display is the active one, its keys are left to
+macOS.
+
 ## Requirements
 
 - **Apple Silicon Mac.** The DDC transport uses the `IOAVService` path. The Intel
   path is documented in the reference but not implemented.
 - **macOS 14** or later.
 - **Xcode 16** or later to build.
+- **Accessibility permission**, but only if you enable the keyboard media keys.
+  Nothing else in MacQ asks for a privacy grant.
 
 Tested against a BenQ MA320UP. Other DDC-capable displays will partly work: the
 transport is generic, but the input-source map is specific to the MA series (see
@@ -106,6 +154,15 @@ Core/
   BenQProfile.swift        Input value to label map, and the read/write asymmetry
   AliasStore.swift         Persist per-monitor source names (UserDefaults)
   Models.swift             ExternalDisplay, InputSource, ControlAvailability
+  Preferences.swift        Media-key settings (UserDefaults), observable
+  MediaKeyTap.swift        CGEvent tap over NX_SYSDEFINED: decode a media key,
+                           swallow it or pass it on, re-arm after a timeout
+  MediaKeyRouter.swift     Decides who owns a keypress and applies it
+  ActiveDisplay.swift      Which display holds the focused window (Accessibility),
+                           resolved out of band and cached; pointer as fallback
+  AudioRouting.swift       Matches a display to its DisplayPort audio device by
+                           EDID UUID, and tracks the default output device
+  MediaKeyHUD.swift        Self-drawn level indicator (NSPanel) on the monitor
 DDC/
   DDCShim.h / .m        Objective-C boundary over the private IOAVService and
                         CoreDisplay APIs; exposes a clean DDCLink to Swift
@@ -122,6 +179,20 @@ Everything else is Swift.
 proved fragile here, receiving a teardown action from FrontBoardServices and
 quitting the app at launch. An AppKit `NSStatusItem` with an `NSPopover` hosting
 the SwiftUI views is the robust, conventional approach for a menu-bar app.
+
+**Why a hand-drawn level indicator:** macOS has two private routes to the real
+system indicator and neither is usable. `OSDUIHelper`, reached over XPC, still
+renders on macOS 26, but what it renders is the pre-26 artifact: a 200x200
+centred square with a 16-block meter, which is the look Tahoe replaced. The
+genuine macOS 26 indicator is drawn by ControlCenter and is only reachable
+through `OSD.framework`'s `OSDManager`, which is private, Swift-native on the
+service side, silent rather than erroring when its protocol drifts, and addressed
+by numeric graphic id (an unrecognised id is not harmless; one of them locks the
+screen). So `MediaKeyHUD` draws the banner itself out of public AppKit:
+`NSGlassEffectView` on macOS 26 and later, and the centred vibrancy square on
+macOS 14 and 15, which is what those releases actually show. `NSGlassEffectView`
+weak-links automatically at the macOS 14 deployment target, so the only cost is
+an availability check.
 
 ## Testing input switching, carefully
 
