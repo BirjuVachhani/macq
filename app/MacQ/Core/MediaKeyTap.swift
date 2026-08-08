@@ -229,7 +229,7 @@ final class MediaKeyTap {
         source = src
         isRunning = true
         NSLog("MacQ.MediaKeyTap: started")
-        MediaKeyDiagnostics.shared.record(
+        MediaKeyDiagnostics.shared.note(
             String(format: "tap armed: session tap, head insert, mask 0x%llX (systemDefined)", mask))
     }
 
@@ -322,7 +322,8 @@ final class MediaKeyTap {
 
         let subtype = event.subtype.rawValue
         guard subtype == NX.subtypeAuxControlButtons else {
-            log.record("systemDefined subtype \(subtype), not an aux-control key")
+            log.recordFirst(subtype: Int(subtype),
+                            "systemDefined subtype \(subtype), not an aux-control key (logged once)")
             return
         }
 

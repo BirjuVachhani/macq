@@ -237,12 +237,22 @@ private struct KeyDiagnosticsSection: View {
                 }
                 .disabled(diagnostics.entries.isEmpty)
             }
+
+            if diagnostics.isFileLogging {
+                Text("Also writing to ~/Library/Logs/MacQ/mediakeys.log. Turn it off with `defaults write \(Bundle.main.bundleIdentifier ?? "dev.birjuvachhani.macq") debugKeyLog -bool NO`.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Reading this window puts the pointer on it, and the pointer is what the brightness keys follow. To watch the routing with the pointer somewhere else, run `defaults write \(Bundle.main.bundleIdentifier ?? "dev.birjuvachhani.macq") debugKeyLog -bool YES`, relaunch MacQ, and read ~/Library/Logs/MacQ/mediakeys.log.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .onAppear {
-            diagnostics.isRecording = true
+            diagnostics.setPanelVisible(true)
             refreshActive()
         }
-        .onDisappear { diagnostics.isRecording = false }
+        .onDisappear { diagnostics.setPanelVisible(false) }
         .onReceive(tick) { _ in refreshActive() }
     }
 

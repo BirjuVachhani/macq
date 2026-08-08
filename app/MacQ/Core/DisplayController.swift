@@ -121,6 +121,7 @@ final class DisplayController: ObservableObject {
                     self.monitorIsAudioOutput = false
                     self.isBusy = false
                     self.lastSyncText = self.stamp("No external monitor")
+                    MediaKeyDiagnostics.shared.note("no external monitor; every media key passes through")
                 }
                 return
             }
@@ -152,6 +153,8 @@ final class DisplayController: ObservableObject {
                     self.monitorIsAudioOutput = false
                     self.isBusy = false
                     self.lastSyncText = self.stamp("DDC/CI not responding")
+                    MediaKeyDiagnostics.shared.note(
+                        "no DDC link for \(chosen.name); every media key passes through")
                 }
                 return
             }
@@ -204,6 +207,16 @@ final class DisplayController: ObservableObject {
                 if supportsM { self.isMuted = muted }
                 self.isBusy = false
                 self.lastSyncText = self.stamp(controllable ? "Synced" : "DDC/CI not responding")
+
+                // The same facts as the NSLog above, on a channel that can
+                // actually be read back. These three are every precondition a
+                // brightness key has to clear apart from where the pointer is,
+                // so a log that shows them plus the pointer explains any
+                // passthrough without a second round of questions.
+                MediaKeyDiagnostics.shared.note(
+                    "monitor \(chosen.name) id \(chosen.id): controllable=\(controllable), "
+                    + "brightness=\(bReading.map { "\($0.current)/\($0.max)" } ?? "no answer to VCP 0x10"), "
+                    + "volume=\(vReading.map { "\($0.current)/\($0.max)" } ?? "no answer to VCP 0x62")")
             }
         }
     }

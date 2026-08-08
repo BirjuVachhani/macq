@@ -92,10 +92,32 @@ to. If a different external display is the active one, its keys are left to
 macOS.
 
 **Diagnostics.** Settings > Keyboard ends with a live log of every media key MacQ
-sees and where it sent it, plus the display it currently considers active. It
-records only while that tab is open. A key that produces no line at all never
-reached MacQ, which is a different fault from one that reached MacQ and was
-passed to the Mac on purpose.
+sees and where it sent it, plus the display it currently considers active. A key
+that produces no line at all never reached MacQ, which is a different fault from
+one that reached MacQ and was passed to the Mac on purpose, and both differ again
+from a tap that was never installed. Keypresses are recorded while that tab is
+open; the tap's own lifecycle is recorded always, so an empty log still says
+whether the tap is armed.
+
+The same log can be written to a file, which is the better instrument for the
+brightness keys: opening the settings window to read the log puts the pointer on
+that window, and the pointer is what those keys follow.
+
+```sh
+defaults write dev.birjuvachhani.macq debugKeyLog -bool YES   # then relaunch MacQ
+tail -f ~/Library/Logs/MacQ/mediakeys.log
+```
+
+It is truncated at each launch and holds nothing but the five media keys, the
+routing decision for each, and the tap's lifecycle.
+
+**A build from Xcode is a different app to macOS.** The Debug configuration uses
+the bundle identifier `dev.birjuvachhani.macq-debug232`, which is both a separate
+preferences domain (so every setting, including the media-keys switch, starts at
+its default of off) and a separate Accessibility identity (so the grant given to
+the release build does not apply). If the media keys appear dead in a build run
+from Xcode, check that first: the log's `start:` line names the bundle identifier
+it is actually using.
 
 ## Requirements
 

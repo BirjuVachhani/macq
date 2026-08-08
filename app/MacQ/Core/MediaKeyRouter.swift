@@ -107,6 +107,17 @@ final class MediaKeyRouter: ObservableObject, MediaKeyTapDelegate {
             .sink { [weak self] _ in self?.syncTapState() }
             .store(in: &cancellables)
 
+        // Logged unconditionally, before the first sync: the starting state is
+        // usually `.off`, and setStatus only records transitions, so without this
+        // the commonest failure ("the feature is simply switched off in this
+        // build's preference domain") would leave no trace at all. The bundle id
+        // is here because it *is* the preference domain: a build signed with a
+        // different identifier reads a different set of settings.
+        MediaKeyDiagnostics.shared.note(
+            "start: bundle \(Bundle.main.bundleIdentifier ?? "unknown"), "
+            + "media keys enabled=\(prefs.mediaKeysEnabled), "
+            + "accessibility trusted=\(MediaKeyTap.isAccessibilityTrusted)")
+
         syncTapState()
     }
 
@@ -121,13 +132,13 @@ final class MediaKeyRouter: ObservableObject, MediaKeyTapDelegate {
             MediaKeyHUD.shared.hide()
             ownedKeys.removeAll()
             trustPollGeneration &+= 1 // cancels any pending permission poll
-            status = .off
+            setStatus(.off)
             return
         }
 
         guard MediaKeyTap.isAccessibilityTrusted else {
             tap.stop()
-            status = .needsAccessibility
+            setStatus(.needsAccessibility)
             pollForTrust()
             return
         }
@@ -140,11 +151,21 @@ final class MediaKeyRouter: ObservableObject, MediaKeyTapDelegate {
 
         do {
             try tap.start()
-            status = .running
+            setStatus(.running)
         } catch {
-            status = .failed("\(error)")
+            setStatus(.failed("\(error)"))
             NSLog("MacQ.MediaKeyRouter: tap start failed: \(error)")
         }
+    }
+
+    /// Every transition is logged, including the ones that mean "no key will ever
+    /// arrive". A silent `.off` is the single most confusing state this feature
+    /// has: nothing happens, nothing is written, and nothing says why. Only real
+    /// changes are recorded, since syncTapState is idempotent and called often.
+    private func setStatus(_ new: Status) {
+        guard new != status else { return }
+        status = new
+        MediaKeyDiagnostics.shared.note("tap status: \(new.summary)")
     }
 
     /// Full stop and restart. The tap dies across sleep/wake, screen lock and
@@ -210,7 +231,7 @@ final class MediaKeyRouter: ObservableObject, MediaKeyTapDelegate {
 
     func mediaKeyTap(_ tap: MediaKeyTap, wasDisabledBy reason: MediaKeyTap.DisableReason) {
         NSLog("MacQ.MediaKeyRouter: tap disabled by \(reason.rawValue) and re-enabled")
-        MediaKeyDiagnostics.shared.record("tap disabled by \(reason.rawValue), re-enabled")
+        MediaKeyDiagnostics.shared.note("tap disabled by \(reason.rawValue), re-enabled")
     }
 
     // MARK: - Routing
