@@ -68,6 +68,13 @@ final class DisplayController: ObservableObject {
 
     private var audioOutputObserver: NSObjectProtocol?
 
+    // Recovery after a monitor that is present but not yet talking. See
+    // scheduleRecovery.
+    private static let recoveryDelays: [TimeInterval] = [1.5, 3, 6]
+    /// Bumped by every refresh, so a retry scheduled by an earlier one knows it
+    /// has been superseded and drops out instead of stacking up.
+    private var refreshGeneration = 0
+
     init() {
         registerReconfigurationCallback()
         // The sound output device can change with no involvement from MacQ, and
@@ -94,7 +101,19 @@ final class DisplayController: ObservableObject {
     /// Re-detects the display and reads its current input (and capabilities on
     /// first bind). Safe to call repeatedly; this is the manual "Sync" action.
     func refresh() {
+        performRefresh(attempt: 0)
+    }
+
+    /// `attempt` is this refresh's position in the recovery ladder: 0 for anything
+    /// the user or the system asked for, higher only for a retry this class
+    /// scheduled itself. Starting again at 0 is what makes "Sync now" a way out
+    /// of a monitor that has stopped answering.
+    private func performRefresh(attempt: Int) {
         // NSScreen (used by discovery) must be read on the main thread.
+        dispatchPrecondition(condition: .onQueue(.main))
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
+
         let displays = DisplayDiscovery.externalDisplays()
         NSLog("MacQ.refresh: externalDisplays=\(displays.count) names=\(displays.map { $0.name })")
         isBusy = true
@@ -155,6 +174,7 @@ final class DisplayController: ObservableObject {
                     self.lastSyncText = self.stamp("DDC/CI not responding")
                     MediaKeyDiagnostics.shared.note(
                         "no DDC link for \(chosen.name); every media key passes through")
+                    self.scheduleRecovery(after: attempt, generation: generation)
                 }
                 return
             }
@@ -186,6 +206,16 @@ final class DisplayController: ObservableObject {
 
             let controllable = (reading != nil) || (bReading != nil) || (vReading != nil) || (self.caps != nil)
             let activeValue = reading.map { UInt8($0.current & 0xFF) }
+
+            // A link that answered nothing at all may be a handle left over from
+            // a DisplayPort connection that has since been torn down and rebuilt,
+            // which stays non-nil and stays silent. Dropping it costs one
+            // IOAVService lookup on the next attempt and is the only thing that
+            // distinguishes a retry from repeating the same failed reads.
+            if !controllable {
+                self.ddc = nil
+                self.boundDisplayID = nil
+            }
             NSLog("MacQ.refresh: display=\(chosen.name) controllable=\(controllable) activeInput=\(activeValue.map { String(format: "0x%02X", $0) } ?? "nil") sources=\(builtSources.count) brightness=\(bReading.map { "\($0.current)/\($0.max)" } ?? "n/a") volume=\(vReading.map { "\($0.current)/\($0.max)" } ?? "n/a") mccs=\(self.caps?.mccsVersion ?? "?")")
 
             self.publish {
@@ -217,6 +247,10 @@ final class DisplayController: ObservableObject {
                     "monitor \(chosen.name) id \(chosen.id): controllable=\(controllable), "
                     + "brightness=\(bReading.map { "\($0.current)/\($0.max)" } ?? "no answer to VCP 0x10"), "
                     + "volume=\(vReading.map { "\($0.current)/\($0.max)" } ?? "no answer to VCP 0x62")")
+
+                if !controllable {
+                    self.scheduleRecovery(after: attempt, generation: generation)
+                }
             }
         }
     }
@@ -449,6 +483,46 @@ final class DisplayController: ObservableObject {
         f.timeStyle = .medium
         f.dateStyle = .none
         return "\(text) · \(f.string(from: Date()))"
+    }
+
+    /// Asks again, a few times, after a refresh that found the monitor but could
+    /// not talk to it.
+    ///
+    /// A panel coming back from sleep is in the display list and carrying a live
+    /// DisplayPort link well before its DDC channel will answer, so the
+    /// reconfiguration event that triggers the refresh routinely arrives too
+    /// early. Without this, that one badly timed read is final: refresh runs only
+    /// on a display change, and the change has already happened. The 3 s poll is
+    /// no help, since it runs only while the popover is open and only re-reads
+    /// values through a link that is already bound. The visible symptom is a
+    /// monitor that looks connected while every media key passes through to the
+    /// Mac, until the app is relaunched or Sync is pressed by hand.
+    ///
+    /// The ladder is short and it stops. A monitor that is genuinely not
+    /// DDC-capable must not be polled forever, and any real change to the display
+    /// setup starts a fresh refresh anyway.
+    private func scheduleRecovery(after attempt: Int, generation: Int) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        // A newer refresh has already started, and its own result decides what
+        // happens next. This is the common case during a wake, which emits
+        // several reconfiguration callbacks in a burst.
+        guard generation == refreshGeneration else { return }
+
+        guard attempt < Self.recoveryDelays.count else {
+            MediaKeyDiagnostics.shared.note(
+                "monitor still not answering after \(attempt) retries; "
+                + "waiting for a display change or a manual sync")
+            return
+        }
+
+        let delay = Self.recoveryDelays[attempt]
+        MediaKeyDiagnostics.shared.note(
+            String(format: "monitor not answering; retrying in %.1fs (attempt %d of %d)",
+                   delay, attempt + 1, Self.recoveryDelays.count))
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, generation == self.refreshGeneration else { return }
+            self.performRefresh(attempt: attempt + 1)
+        }
     }
 
     fileprivate func handleReconfiguration(flags: CGDisplayChangeSummaryFlags) {
