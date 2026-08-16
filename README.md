@@ -75,21 +75,40 @@ touched, so the Mac keeps behaving normally.
     monitor is the speaker but a lot of work happens on the built-in screen.
 - Under either rule, a key that does not qualify passes straight through, so the
   Mac's own volume keeps responding normally.
-- Intercepting a key also suppresses the system indicator, so MacQ draws its own
-  level indicator on the monitor. That can be switched off too.
+- Intercepting a key also suppresses the system indicator, so MacQ draws its own.
+  It hangs under MacQ's menu-bar icon and is titled with the monitor it changed,
+  which is what tells you the key went to the monitor rather than to the Mac. If
+  the icon is hidden, the indicator falls back to the top right corner under the
+  menu bar. It can be switched off too.
 
 This rule governs the keys only. The popover's volume slider always drives the
 monitor, whatever the Mac happens to be playing through, because dragging it is
 an explicit instruction about that panel.
 
 **Permission.** An intercepting event tap requires Accessibility (System Settings
-> Privacy & Security > Accessibility), not Input Monitoring. MacQ inspects only
-the brightness, volume and mute keys, and installs no tap at all until you enable
-the feature.
+> Privacy & Security > Accessibility), not Input Monitoring. MacQ installs no tap
+at all until you enable the feature.
+
+**What the tap sees.** Volume and mute arrive as classic media keys, on a stream
+that carries nothing else. Brightness does not: on most keyboards, including this
+Mac's own, the brightness keys are sent as ordinary key presses with key codes
+144 and 145. Reading them therefore means watching the same stream every other
+keystroke travels on, which is worth being plain about. The tap reads one thing
+from each event, which key it was, and returns immediately for anything that is
+not brightness, volume or mute. Nothing you type is inspected further, kept,
+written to disk, or sent anywhere, and MacQ makes no network connections at all.
 
 **Limitation.** MacQ drives one external monitor at a time, the one it has bound
 to. If a different external display is the active one, its keys are left to
 macOS.
+
+**Waking.** A monitor is back in the display list before its DDC channel will
+answer, so the reconfiguration event that prompts MacQ to re-query it often
+arrives too early. When the monitor is present but silent, MacQ asks again after
+1.5 s, 3 s and 6 s, rebuilding the DDC link each time, then stops and waits for
+the next display change or a manual "Sync now". Without that, one badly timed
+read after a wake would leave the monitor looking connected while every media key
+quietly passed through to the Mac.
 
 **Diagnostics.** Settings > Keyboard ends with a live log of every media key MacQ
 sees and where it sent it, plus the display it currently considers active. A key
@@ -189,15 +208,17 @@ Core/
   AliasStore.swift         Persist per-monitor source names (UserDefaults)
   Models.swift             ExternalDisplay, InputSource, ControlAvailability
   Preferences.swift        Media-key settings (UserDefaults), observable
-  MediaKeyTap.swift        CGEvent tap over NX_SYSDEFINED: decode a media key,
-                           swallow it or pass it on, re-arm after a timeout
+  MediaKeyTap.swift        CGEvent tap over NX_SYSDEFINED (volume, mute) and
+                           key codes 144/145 (brightness): decode a key, swallow
+                           it or pass it on, re-arm after a timeout
   MediaKeyRouter.swift     Decides who owns a keypress and applies it
   ActiveDisplay.swift      Which display is active: the one under the pointer,
                            with focused-window tracking (Accessibility) as a
                            fallback, resolved out of band and cached
   AudioRouting.swift       Matches a display to its DisplayPort audio device by
                            EDID UUID, and tracks the default output device
-  MediaKeyHUD.swift        Self-drawn level indicator (NSPanel) on the monitor
+  MediaKeyHUD.swift        Self-drawn level indicator (NSPanel), titled with the
+                           monitor's name and hung under the menu-bar icon
 DDC/
   DDCShim.h / .m        Objective-C boundary over the private IOAVService and
                         CoreDisplay APIs; exposes a clean DDCLink to Swift
