@@ -23,9 +23,8 @@
 //  ERAS
 //    macOS 26 and later: a Liquid Glass banner naming the monitor, with a
 //    continuous level track and a knob, flanked by a quiet and an emphatic copy
-//    of the symbol. It is pinned to the dark appearance because the system's own
-//    banner is dark in both, and glass otherwise renders it as a pale slab in
-//    Light mode that reads as a stray app window.
+//    of the symbol. Its appearance is left alone so the glass adapts, which is
+//    the whole point of the material.
 //    It hangs under MacQ's own menu-bar icon so the change
 //    appears where the app that made it lives. When that icon is not on screen,
 //    hidden by the user or by a menu-bar manager, or pushed off a crowded bar,
@@ -296,7 +295,12 @@ final class MediaKeyHUD {
         panel.becomesKeyOnlyIfNeeded = true
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = false
+        // Glass floats above what it is refracting, and the drop shadow is part
+        // of how it reads as a separate pane of material rather than as a tinted
+        // patch of the wallpaper. The pre-26 chiclet has no shadow, so only the
+        // banner asks for one. AppKit derives the shape from the window's alpha,
+        // which is the rounded glass fill, so the shadow follows the corners.
+        panel.hasShadow = Self.usesBanner
         panel.ignoresMouseEvents = true
         // .screenSaver clears the Dock, the menu bar and full-screen windows.
         // The real system indicator sits higher, at CGWindowLevel 2005, but the
@@ -309,16 +313,16 @@ final class MediaKeyHUD {
         // Excluded from window cycling and from screenshots of "windows".
         panel.isExcludedFromWindowsMenu = true
 
-        // The system's media banner is dark in BOTH appearances: the capture
-        // these metrics come from was taken in Light mode and is near-black.
-        // Glass follows the appearance it finds itself in, so without pinning
-        // this the banner renders as a pale frosted slab in Light mode, which
-        // reads as a stray app window rather than as a system indicator.
-        // Pinning it also resolves labelColor to white, so every colour below is
-        // stated once and is correct whichever appearance the user runs.
-        if Self.usesBanner {
-            panel.appearance = NSAppearance(named: .darkAqua)
-        }
+        // Deliberately no `panel.appearance`. An earlier version pinned the
+        // banner to .darkAqua, on the reading that the system's own banner looks
+        // dark in Light mode too. That reading was the material doing its job:
+        // glass takes its cast from whatever is behind it, so a banner captured
+        // over dark content photographs dark in either appearance. Pinning it
+        // froze that one sample in, which in Light mode over a light desktop
+        // renders the dark glass variant: a smoked slab, the pre-26 look wearing
+        // a new corner radius. Left alone, the view adapts, which is the entire
+        // point of the material. Every colour below is therefore a semantic one
+        // (labelColor and friends) so it resolves correctly in both appearances.
 
         func makeGlyphView() -> NSImageView {
             let view = NSImageView()
@@ -469,6 +473,11 @@ final class MediaKeyHUD {
         if Self.usesBanner, let anchored = anchoredFrame(size: size) {
             notePlacement("under the menu-bar icon at x \(Int(anchored.midX.rounded()))")
             panel.setFrame(anchored, display: false)
+            // The banner is re-measured against each title, so its width changes
+            // between shows. A borderless window caches the shadow it derived
+            // from the previous alpha shape, which would leave the old, wider
+            // outline hanging off the new edge.
+            panel.invalidateShadow()
             return
         }
 
@@ -494,6 +503,7 @@ final class MediaKeyHUD {
                            height: size.height)
         }
         panel.setFrame(frame, display: false)
+        panel.invalidateShadow()
     }
 
     /// Records where the banner went, and only when that changes.
