@@ -58,10 +58,13 @@ defaults:
 jobs:
   dmg:
     name: Build, notarize and upload DMG
-    # macos-15 ships Xcode 16, which MacQ requires. macos-latest works too, at
-    # the cost of tracking whatever Xcode the image moves to.
-    runs-on: macos-latest
-    # runs-on: blacksmith-6vcpu-macos-latest
+    # Pinned to macos-26, not macos-latest. MacQ compiles NSGlassEffectView,
+    # which exists only in the macOS 26 SDK, and macos-latest still resolves to
+    # macOS 15 with Xcode 16 as its default. The Xcode is then pinned explicitly
+    # in "Select Xcode" below, because an image's default is exactly the thing
+    # that moved and broke the 0.2.0 build.
+    runs-on: macos-26
+    # runs-on: blacksmith-6vcpu-macos-latest   # needs a macOS 26 image too
     timeout-minutes: 60
 
     env:
@@ -151,10 +154,38 @@ jobs:
           ref: ${{ steps.rel.outputs.tag }}
           persist-credentials: false
 
+      - name: Select Xcode
+        # The image default is not trusted: MacQ compiles NSGlassEffectView, which
+        # needs the macOS 26 SDK, and the 0.2.0 build failed a minute into
+        # compilation because the runner defaulted to Xcode 16. DEVELOPER_DIR is
+        # enough on its own (no sudo xcode-select) and every later step picks it
+        # up, xcodebuild and xcrun and codesign and notarytool alike.
+        run: |
+          set -euo pipefail
+          # `|| true`: with pipefail, ls finding nothing fails the whole pipeline,
+          # and set -e would abort here instead of printing the message below.
+          latest=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)
+          if [ -z "$latest" ]; then
+            echo "::error::No Xcode 26 on this runner. Installed:"
+            ls -d /Applications/Xcode*.app || true
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$latest/Contents/Developer" >> "$GITHUB_ENV"
+          echo "Selected $latest"
+
       - name: Show toolchain
         run: |
+          set -euo pipefail
           sw_vers
           xcodebuild -version
+          sdk=$(xcrun --sdk macosx --show-sdk-version)
+          echo "macOS SDK $sdk"
+          # Fail here, in seconds, rather than partway through a compile with
+          # "cannot find 'NSGlassEffectView' in scope".
+          if [ "${sdk%%.*}" -lt 26 ]; then
+            echo "::error::macOS SDK $sdk is too old; MacQ needs 26 or newer."
+            exit 1
+          fi
 
       - name: Stage signing material
         env:

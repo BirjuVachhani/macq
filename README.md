@@ -142,8 +142,10 @@ it is actually using.
 
 - **Apple Silicon Mac.** The DDC transport uses the `IOAVService` path. The Intel
   path is documented in the reference but not implemented.
-- **macOS 14** or later.
-- **Xcode 16** or later to build.
+- **macOS 14** or later to run.
+- **Xcode 26** or later to build. The macOS 26 media-key indicator calls
+  `NSGlassEffectView`, which only exists in the macOS 26 SDK. `#available` gates
+  it at runtime, so the app still runs on macOS 14, but the call has to compile.
 - **Accessibility permission**, but only if you enable the keyboard media keys.
   Nothing else in MacQ asks for a privacy grant.
 
@@ -247,8 +249,11 @@ by numeric graphic id (an unrecognised id is not harmless; one of them locks the
 screen). So `MediaKeyHUD` draws the banner itself out of public AppKit:
 `NSGlassEffectView` on macOS 26 and later, and the centred vibrancy square on
 macOS 14 and 15, which is what those releases actually show. `NSGlassEffectView`
-weak-links automatically at the macOS 14 deployment target, so the only cost is
-an availability check.
+weak-links automatically at the macOS 14 deployment target, so the runtime cost
+is one availability check. The build cost is less forgiving: `#available` decides
+what runs, not what compiles, so the macOS 26 SDK is required to build at all.
+That is why the requirement above is Xcode 26 and why the release workflow pins
+its runner.
 
 ## Testing input switching, carefully
 

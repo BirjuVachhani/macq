@@ -111,8 +111,31 @@ endef
 
 # ----------------------------------------------------------------- build ---
 
+# The macOS 26 media-key indicator uses NSGlassEffectView, which exists only in
+# the macOS 26 SDK. `#available(macOS 26.0, *)` gates it at *runtime*, so the app
+# still runs on macOS 14, but compiling that call at all needs the newer SDK.
+# Building with an older Xcode fails a minute in with "cannot find
+# NSGlassEffectView in scope", which does not say what is actually wrong, so the
+# SDK is checked up front instead.
+MIN_SDK_MAJOR := 26
+
+.PHONY: check-sdk
+check-sdk:
+	@sdk=$$(xcrun --sdk macosx --show-sdk-version 2>/dev/null); \
+	 if [ -z "$$sdk" ]; then \
+	   echo "error: no macOS SDK found. Install Xcode and run xcode-select." >&2; \
+	   exit 1; \
+	 fi; \
+	 if [ "$${sdk%%.*}" -lt $(MIN_SDK_MAJOR) ]; then \
+	   echo "error: macOS SDK $$sdk is too old; MacQ needs $(MIN_SDK_MAJOR) or newer." >&2; \
+	   echo "       Xcode in use: $$(xcode-select -p)" >&2; \
+	   echo "       Point at a newer one, e.g.:" >&2; \
+	   echo "         sudo xcode-select -s /Applications/Xcode_26.app" >&2; \
+	   exit 1; \
+	 fi
+
 .PHONY: build
-build: ## Compile a universal Release .app (unsigned) into artifacts/
+build: check-sdk ## Compile a universal Release .app (unsigned) into artifacts/
 	@echo "==> Building $(APP_NAME) $(VERSION) ($(BUILD_NUMBER)), configuration $(CONFIGURATION)"
 	@mkdir -p "$(ARTIFACTS_DIR)"
 	@xcodebuild \
@@ -329,6 +352,14 @@ doctor: ## Check toolchain and secrets configuration
 	@for t in notarytool stapler; do \
 		if xcrun --find $$t >/dev/null 2>&1; then echo "  ok       $$t"; else echo "  MISSING  $$t (needs Xcode 13+)"; fi; \
 	 done
+	@sdk=$$(xcrun --sdk macosx --show-sdk-version 2>/dev/null); \
+	 if [ -z "$$sdk" ]; then \
+		echo "  MISSING  macOS SDK"; \
+	 elif [ "$${sdk%%.*}" -lt $(MIN_SDK_MAJOR) ]; then \
+		echo "  TOO OLD  macOS SDK $$sdk (needs $(MIN_SDK_MAJOR)+; $$(xcode-select -p))"; \
+	 else \
+		echo "  ok       macOS SDK $$sdk"; \
+	 fi
 	@if command -v create-dmg >/dev/null 2>&1; then \
 		echo "  ok       create-dmg (styled DMG)"; \
 	 else \
