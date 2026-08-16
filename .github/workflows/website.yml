@@ -49,7 +49,8 @@ concurrency:
 jobs:
   build:
     name: Build site
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    # runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     # Scoped to this job rather than the workflow: `deploy` never checks the
