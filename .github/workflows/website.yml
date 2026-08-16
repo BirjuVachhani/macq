@@ -1,0 +1,128 @@
+name: Deploy website
+
+# Builds the Astro site in website/ and publishes it to GitHub Pages at
+# https://macq.birju.dev.
+#
+#   push to main         only when something under website/ changed
+#   release (published)  republish, so a release always matches what is live
+#   workflow_dispatch    deploy the current main by hand
+#
+# One-time repository setup:
+#
+#   1. Settings > Pages > Build and deployment > Source: "GitHub Actions".
+#      Without this the deploy step fails with a 404 on the Pages API.
+#   2. DNS: a CNAME record for macq pointing at birjuvachhani.github.io.
+#      The domain itself comes from website/public/CNAME, which Astro copies
+#      into dist/ and Pages reads out of the published artifact.
+#
+# No secrets. The deploy authenticates with the workflow's own OIDC token,
+# which is what `id-token: write` below is for.
+
+on:
+  push:
+    branches: [main]
+    # The macOS app shares this repository and is pushed to far more often than
+    # the site. Without this filter every app commit would redeploy an
+    # identical site. Drop the filter to rebuild on every push to main.
+    paths:
+      - 'website/**'
+      - '.github/workflows/website.yml'
+  release:
+    # `published` also covers publishing a draft, which `created` does not.
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Both are required by actions/deploy-pages: one to publish, one to mint the
+  # OIDC token it authenticates with.
+  pages: write
+  id-token: write
+
+concurrency:
+  # Pages has a single live deployment, so runs queue rather than race. In
+  # flight deploys are left to finish, because cancelling one can leave the
+  # site on a half published artifact.
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Scoped to this job rather than the workflow: `deploy` never checks the
+    # repository out, so a `website` working directory would not exist there.
+    defaults:
+      run:
+        shell: bash
+        working-directory: website
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          # Matches the @types/node major in website/package.json. Bump both
+          # together, or `astro check` will type against the wrong runtime.
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        # `npm ci` over `npm install`: it installs exactly the lockfile and
+        # fails if package.json has drifted from it, rather than quietly
+        # resolving something the site was never built against.
+        run: npm ci
+
+      - name: Build
+        # `npm run build` is `astro check && astro build`, so a type error in a
+        # component fails here rather than shipping.
+        run: npm run build
+
+      - name: Verify output
+        # Cheap guards against publishing an empty or malformed artifact. Each
+        # of these has a plausible way of going wrong that a green build would
+        # otherwise hide.
+        run: |
+          set -euo pipefail
+
+          [ -f dist/index.html ] || { echo "::error::dist/index.html is missing."; exit 1; }
+          [ -s dist/CNAME ]      || { echo "::error::dist/CNAME is missing, so Pages would drop the custom domain."; exit 1; }
+
+          domain=$(tr -d '[:space:]' < dist/CNAME)
+          [ "$domain" = "macq.birju.dev" ] || { echo "::error::dist/CNAME says '$domain', expected macq.birju.dev."; exit 1; }
+
+          shots=$(find dist/shots -type f \( -name '*.webp' -o -name '*.png' -o -name '*.jpg' -o -name '*.mp4' \) | wc -l | tr -d ' ')
+          [ "$shots" -gt 0 ] || { echo "::error::No carousel shots in dist/shots, the page would render placeholders."; exit 1; }
+
+          {
+            echo "### Website build"
+            echo
+            echo "- \`dist/\` is $(du -sh dist | cut -f1) across $(find dist -type f | wc -l | tr -d ' ') files"
+            echo "- $shots carousel shots"
+            echo "- domain: $domain"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          # Not affected by `defaults.run.working-directory`, which only applies
+          # to `run` steps, so this path is from the repository root.
+          path: website/dist
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
