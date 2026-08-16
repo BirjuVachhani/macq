@@ -2,9 +2,15 @@
 //  MediaKeyTap.swift
 //  MacQ
 //
-//  An active (swallowing) CGEventTap over the NX_SYSDEFINED media-key stream,
-//  so F1/F2 and F10/F11/F12 can drive the external monitor over DDC instead of
-//  the Mac's own display and speakers.
+//  An active (swallowing) CGEventTap over the keys in the top row, so F1/F2 and
+//  F10/F11/F12 can drive the external monitor over DDC instead of the Mac's own
+//  display and speakers.
+//
+//  Those keys arrive in two different spellings, and a keyboard may use both at
+//  once. Volume comes through as NX_SYSDEFINED subtype 8, the classic media-key
+//  stream. Brightness, on this Mac and on many others, comes through as an
+//  ordinary key press with key code 144 or 145. Both are decoded here into the
+//  same MediaKeyPress so nothing downstream has to care which one it was.
 //
 //  Main-thread confined: the run-loop source is installed on the main run loop,
 //  so start/stop and every delegate callback happen on the main thread and the
@@ -53,6 +59,18 @@ enum NX {
     static let keyRepeatMask: Int64 = 0x1
 }
 
+/// Virtual key codes for the keys that arrive as ordinary key presses instead of
+/// as systemDefined media keys.
+///
+/// There is no header constant for these. They are the codes the HID layer
+/// assigns to the brightness keys, confirmed on this hardware by watching the
+/// raw stream: pressing F1 produces key code 145 and F2 produces 144, while the
+/// volume keys on the same keyboard produce systemDefined events instead.
+enum VK {
+    static let brightnessUp: Int64 = 144
+    static let brightnessDown: Int64 = 145
+}
+
 // MARK: - Decoded model
 
 /// The five keys MacQ cares about. Everything else on this stream (play/pause,
@@ -72,6 +90,19 @@ enum MediaKey: Equatable {
         case NX.keyTypeSoundUp: self = .volumeUp
         case NX.keyTypeSoundDown: self = .volumeDown
         case NX.keyTypeMute: self = .mute
+        default: return nil
+        }
+    }
+
+    /// The other spelling: a plain key press rather than a media key.
+    ///
+    /// Only brightness appears here. No keyboard reports volume this way, and
+    /// adding codes speculatively would mean swallowing keystrokes that some
+    /// other app is entitled to receive.
+    init?(virtualKeyCode code: Int64) {
+        switch code {
+        case VK.brightnessUp: self = .brightnessUp
+        case VK.brightnessDown: self = .brightnessDown
         default: return nil
         }
     }
@@ -189,21 +220,26 @@ final class MediaKeyTap {
         // reportable instead of an opaque nil out of tapCreate.
         guard Self.isAccessibilityTrusted else { throw StartError.notTrusted }
 
-        // systemDefined only, deliberately.
+        // Both spellings, because one keyboard can use both at once. MacQ
+        // originally masked systemDefined alone, which made brightness look
+        // permanently broken on hardware that sends it as key codes 144/145
+        // while sending volume as systemDefined. No amount of routing or DDC
+        // work could have fixed that: the events were never in the mask.
         //
-        // These events exist only while the top row is in media-key mode. With
-        // "Use F1, F2, etc. keys as standard function keys" on, plain F1 emits
-        // an ordinary keyDown and no systemDefined event, but macOS does not
-        // change brightness either, so passing it through is exactly right. The
-        // fn/Globe modifier inverts the mode per keystroke, so fn+F1 still
-        // arrives here and still works.
+        // keyUp is here so a swallowed key-down has a swallowed key-up to match
+        // it. Passing the release through on its own would hand macOS half a
+        // keystroke.
         //
-        // The cost of this choice: some third-party keyboards report brightness
-        // as raw keyDown keycodes 144/145 instead, and MacQ will not see those.
-        // Catching them would mean masking kCGEventKeyDown, which routes every
-        // keystroke on the system synchronously through this process. That is
-        // not a trade a monitor utility should make by default.
-        let mask = CGEventMask(1) << CGEventMask(NX.sysDefined)
+        // Watching keyDown does mean every keystroke on the system is routed
+        // synchronously through this process, which is worth being explicit
+        // about. The callback reads one integer, the key code, and returns
+        // immediately for anything that is not a brightness key: nothing else
+        // about any other key is read, recorded, accumulated, or copied. The
+        // decision to intercept or pass through is then made per keystroke by
+        // MediaKeyRouter, on the display the pointer is on.
+        let mask = (CGEventMask(1) << CGEventMask(NX.sysDefined))
+            | (CGEventMask(1) << CGEventMask(CGEventType.keyDown.rawValue))
+            | (CGEventMask(1) << CGEventMask(CGEventType.keyUp.rawValue))
 
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap,
@@ -230,7 +266,8 @@ final class MediaKeyTap {
         isRunning = true
         NSLog("MacQ.MediaKeyTap: started")
         MediaKeyDiagnostics.shared.note(
-            String(format: "tap armed: session tap, head insert, mask 0x%llX (systemDefined)", mask))
+            String(format: "tap armed: session tap, head insert, mask 0x%llX "
+                   + "(systemDefined + keyDown + keyUp)", mask))
     }
 
     /// Disarms and fully disposes the tap. Idempotent, so a Settings toggle can
@@ -301,6 +338,35 @@ final class MediaKeyTap {
                              modifiers: event.modifierFlags)
     }
 
+    /// Decodes a `keyDown`/`keyUp` CGEvent into a brightness press, or nil for
+    /// every other key on the keyboard.
+    ///
+    /// This runs on every keystroke in the system, so the order of the two
+    /// statements below is the whole privacy story: the key code is read, and a
+    /// key that is not brightness returns before anything else about the event
+    /// is touched. Nothing is logged, buffered, or retained on that path.
+    static func decode(_ cgEvent: CGEvent, isDown: Bool) -> MediaKeyPress? {
+        let code = cgEvent.getIntegerValueField(.keyboardEventKeycode)
+        guard let key = MediaKey(virtualKeyCode: code) else { return nil }
+
+        // CGEventFlags and NSEvent.ModifierFlags use the same bit positions for
+        // shift/control/option/command, which is all isFineStep reads.
+        return MediaKeyPress(
+            key: key,
+            isDown: isDown,
+            isRepeat: isDown && cgEvent.getIntegerValueField(.keyboardEventAutorepeat) != 0,
+            modifiers: NSEvent.ModifierFlags(rawValue: UInt(cgEvent.flags.rawValue)))
+    }
+
+    /// Logs a press that arrived as a key code, tagged so the log distinguishes
+    /// the two spellings when only one of them is working.
+    fileprivate static func diagnose(_ press: MediaKeyPress) {
+        guard MediaKeyDiagnostics.shared.isRecording else { return }
+        MediaKeyDiagnostics.shared.record(
+            "\(press.key) \(press.isDown ? "down" : "up")"
+            + "\(press.isRepeat ? " (repeat)" : "") (key code)")
+    }
+
     /// Records the raw shape of a systemDefined event, including every one that
     /// `decode` rejects.
     ///
@@ -364,6 +430,18 @@ private func mediaKeyTapCallback(proxy: CGEventTapProxy,
     case .tapDisabledByUserInput:
         tap.handleDisabled(.userInput)
         return passthrough
+
+    case .keyDown, .keyUp:
+        // The hottest path in the app: it runs for every keystroke anywhere in
+        // the system, including passwords. `decode` reads the key code and
+        // nothing else before rejecting non-brightness keys, and this returns
+        // the event untouched the moment it does.
+        guard let press = MediaKeyTap.decode(event, isDown: type == .keyDown) else {
+            return passthrough
+        }
+        MediaKeyTap.diagnose(press)
+        return tap.askDelegate(press) ? nil : passthrough
+
     default:
         break
     }
