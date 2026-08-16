@@ -1,12 +1,19 @@
 ---
 import Base from '../layouts/Base.astro';
+import SiteHeader from '../components/SiteHeader.astro';
 import Hero from '../components/Hero.astro';
 import Screenshots from '../components/Screenshots.astro';
+import Features from '../components/Features.astro';
 ---
 
 <Base>
   <div class="page">
-    <Hero />
-    <Screenshots />
+    <SiteHeader />
+
+    <main class="main">
+      <Hero />
+      <Screenshots />
+      <Features />
+    </main>
   </div>
 </Base>

@@ -5,6 +5,150 @@ import { loadShots } from '../lib/shots';
 const shots = loadShots();
 ---
 
-<aside class="screenshots" aria-label="MacQ screenshots">
+{
+  /*
+   * A plain scroll region rather than a scripted carousel: the browser's own
+   * scrolling does the work, with nothing snapping or paging on top of it.
+   * `tabindex` makes the strip focusable, which is what lets the arrow keys
+   * drive it for anyone not using a trackpad.
+   *
+   * The script below adds mouse drag-to-scroll, which is the one thing the
+   * browser will not do by itself. Everything else here works without it.
+   */
+}
+<section
+  class="carousel"
+  tabindex="0"
+  aria-label="MacQ screenshots, scroll sideways for more"
+>
   {shots.map((shot, i) => <Shot shot={shot} index={i + 1} />)}
-</aside>
+</section>
+
+<script>
+  /*
+   * Mouse drag-to-scroll for the shot strip.
+   *
+   * This is the only JavaScript on the site, and it is here because there is no
+   * CSS for it. A trackpad and a touchscreen can already fling the strip, so
+   * they are left to the browser: taking their events over would replace
+   * something good with an imitation of it. A mouse has no equivalent gesture,
+   * which is what this fills in, along with mapping its one vertical wheel onto
+   * the strip's horizontal axis.
+   */
+
+  const strip = document.querySelector<HTMLElement>('.carousel');
+
+  if (strip) {
+    /** Pixels of travel before a press counts as a drag rather than a click. */
+    const DRAG_THRESHOLD = 3;
+    /** Per-frame velocity decay after release. Lower stops the glide sooner. */
+    const FRICTION = 0.94;
+    /** Below this the glide has effectively stopped, so end it. */
+    const MIN_VELOCITY = 0.1;
+    /** How much of each frame's movement feeds the throw, versus the history. */
+    const VELOCITY_SMOOTHING = 0.3;
+
+    let pointerId: number | null = null;
+    let startX = 0;
+    let lastX = 0;
+    let velocity = 0;
+    let dragged = false;
+    let glide = 0;
+
+    /** Drop the drag styling, which also hands `scroll-behavior` back to CSS. */
+    function settle() {
+      strip!.classList.remove('is-dragging');
+    }
+
+    function stopGlide() {
+      if (glide) cancelAnimationFrame(glide);
+      glide = 0;
+    }
+
+    strip.addEventListener('pointerdown', (event) => {
+      if (event.pointerType !== 'mouse' || event.button !== 0) return;
+
+      stopGlide();
+      pointerId = event.pointerId;
+      startX = lastX = event.clientX;
+      velocity = 0;
+      dragged = false;
+      strip.classList.add('is-dragging');
+      strip.setPointerCapture(pointerId);
+    });
+
+    strip.addEventListener('pointermove', (event) => {
+      if (event.pointerId !== pointerId) return;
+
+      const dx = event.clientX - lastX;
+      lastX = event.clientX;
+
+      if (!dragged && Math.abs(event.clientX - startX) > DRAG_THRESHOLD) dragged = true;
+      if (!dragged) return;
+
+      strip.scrollLeft -= dx;
+      // Smoothed, so one stuttery frame just before the release does not get to
+      // decide how far the throw carries.
+      velocity = velocity * (1 - VELOCITY_SMOOTHING) + dx * VELOCITY_SMOOTHING;
+    });
+
+    function release(event: PointerEvent) {
+      if (event.pointerId !== pointerId) return;
+      pointerId = null;
+
+      if (!dragged || Math.abs(velocity) < MIN_VELOCITY) {
+        settle();
+        return;
+      }
+
+      function step() {
+        const before = strip!.scrollLeft;
+        strip!.scrollLeft -= velocity;
+        velocity *= FRICTION;
+
+        // Stop on friction, or early if the strip has run into either end and
+        // the remaining velocity has nowhere left to move it.
+        if (Math.abs(velocity) < MIN_VELOCITY || strip!.scrollLeft === before) {
+          settle();
+          glide = 0;
+          return;
+        }
+
+        glide = requestAnimationFrame(step);
+      }
+
+      glide = requestAnimationFrame(step);
+    }
+
+    strip.addEventListener('pointerup', release);
+    strip.addEventListener('pointercancel', release);
+
+    // A press that turned into a drag must not also land as a click on whatever
+    // tile it happened to finish over. Captured, so it never reaches the tile.
+    strip.addEventListener(
+      'click',
+      (event) => {
+        if (!dragged) return;
+        event.preventDefault();
+        event.stopPropagation();
+      },
+      true,
+    );
+
+    // Otherwise the browser's native image drag hijacks the gesture on the very
+    // first move and the strip never scrolls.
+    strip.addEventListener('dragstart', (event) => event.preventDefault());
+
+    // A plain mouse only has a vertical wheel, so without this the strip would
+    // be drag-only. Trackpads send a real `deltaX` and are left to the browser.
+    strip.addEventListener(
+      'wheel',
+      (event) => {
+        if (event.deltaY === 0 || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+        strip.scrollLeft += event.deltaY;
+        event.preventDefault();
+      },
+      { passive: false },
+    );
+  }
+</script>

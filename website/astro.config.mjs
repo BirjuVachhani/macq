@@ -7,7 +7,7 @@ import { defineConfig } from 'astro/config';
 export default defineConfig({
   site: 'https://macq.birju.dev',
   build: {
-    // One page, no client JS: emit `index.html` rather than a directory.
+    // A single page, so emit `index.html` rather than a directory.
     format: 'file',
   },
 });

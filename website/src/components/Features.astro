@@ -1,0 +1,14 @@
+---
+import { site } from '../site.config';
+---
+
+<ul class="features">
+  {
+    site.features.map((feature) => (
+      <li class="feature">
+        <span class="feature-label">{feature.label}</span>
+        <span class="feature-desc">{feature.desc}</span>
+      </li>
+    ))
+  }
+</ul>

@@ -1,13 +1,12 @@
 /**
- * The right-hand column of app shots.
+ * The app shots in the carousel.
  *
  * Files dropped into `public/shots/` show up on the page automatically, sorted
  * by filename, so `01-sources.png`, `02-brightness.mp4` and so on land in the
- * order you name them. Until there are any, the column renders placeholder
+ * order you name them. Until there are any, the carousel renders placeholder
  * tiles so the layout still reads.
  *
- * The tiles are `1920 / 1206`, matching a 16:10 window with its title bar, so
- * shots at that ratio fill a tile without being cropped.
+ * The tiles are 16:10, so shots at that ratio fill one without being cropped.
  */
 
 import fs from 'node:fs';

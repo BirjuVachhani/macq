@@ -1,12 +1,13 @@
 /*
  * MacQ site styles.
  *
- * Single-screen layout: a sticky hero column on the left, a scrolling column of
- * app shots on the right. Below 900px the two stack and the shots turn into a
- * horizontal strip.
+ * Single-screen layout, stacked top to bottom: header, hero copy, a horizontal
+ * carousel of app shots that floats in the middle of the screen, then the
+ * feature list pinned to the bottom.
  *
- * There is no client-side JavaScript on this page. Everything here is layout,
- * type and two transitions.
+ * The carousel is nothing but the browser's own horizontal scrolling on an
+ * overflowing flex row. The page's only script adds mouse drag-to-scroll on top
+ * of that, and the layout does not depend on it.
  */
 
 :root {
@@ -33,8 +34,19 @@
     'Segoe UI', sans-serif;
 
   --radius: 12px;
+  /* The tiles are rounded far harder than the buttons, closer to a macOS app
+     icon than to a window, so they get their own token. */
+  --radius-shot: 26px;
   --gutter-x: 32px;
   --gutter-top: 36px;
+
+  /* Tile height, as a share of the window. See `.shot` for the other ceiling. */
+  --shot-h: clamp(200px, 46vh, 560px);
+  /* Every vertical pixel the tiles do not get: the header, the hero copy, the
+     feature list, the page gutters and the carousel's own padding. Measured,
+     not guessed. Bump it whenever a block above or below the strip changes
+     height, or the tiles will start pushing the page into scrolling. */
+  --shot-budget: 552px;
 }
 
 * {
@@ -84,9 +96,16 @@ a {
 
 .page {
   display: flex;
-  align-items: flex-start;
-  gap: 2px;
-  width: 100%;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: var(--gutter-top) var(--gutter-x) 47px;
+}
+
+/* Holds the three stacked blocks and hands its free space to the carousel. */
+.main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
 }
 
 /* --------------------------------------------------------------- header --- */
@@ -98,44 +117,27 @@ a {
   margin-bottom: 40px;
 }
 
+/* Everything on one center line. The icon art runs edge to edge in its own file,
+   with no transparent padding to correct for, so the boxes centering on each
+   other is also the two shapes centering on each other. */
 .brand {
   display: inline-flex;
-  align-items: stretch;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   height: 38px;
   color: var(--ink);
 }
 
-.brand-mark,
-.brand-word {
-  align-self: flex-end;
-  margin-bottom: 6px;
+.brand-mark {
+  width: 34px;
+  height: 34px;
 }
 
 .brand-word {
-  font-size: 16px;
+  font-size: 19px;
   font-weight: 500;
   letter-spacing: -0.01em;
   line-height: 1;
-}
-
-/* Reads as a text cursor parked after the wordmark. */
-.brand-rule {
-  display: inline-block;
-  width: 2px;
-  height: 38px;
-  background: var(--accent);
-  animation: blink 1s step-end infinite;
-}
-
-@keyframes blink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
 }
 
 .site-nav {
@@ -182,15 +184,8 @@ a {
 
 .hero {
   display: flex;
-  position: sticky;
-  top: 0;
-  flex: 1;
   flex-direction: column;
-  height: 100vh;
-  margin-left: var(--gutter-x);
-  margin-right: var(--gutter-x);
-  padding-top: var(--gutter-top);
-  padding-bottom: 47px;
+  flex-shrink: 0;
 }
 
 .headline {
@@ -267,12 +262,13 @@ a {
   line-height: 1;
 }
 
-/* `margin-top: auto` pins the list to the bottom of the viewport-tall hero. */
+/* The carousel's auto margins push this to the bottom of the screen. */
 .features {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   gap: 13px;
-  margin: auto 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -295,23 +291,77 @@ a {
 
 /* ------------------------------------------------------------ app shots --- */
 
-.screenshots {
+/*
+ * The vertical auto margins are what center the strip: as the only flex item in
+ * `.main` with `margin: auto`, it soaks up every spare pixel above and below,
+ * which parks it mid-screen and leaves the feature list at the bottom.
+ *
+ * The negative horizontal margin cancels the page gutter so the strip runs the
+ * full width of the window and tiles scroll off both edges, while the matching
+ * padding keeps the first tile lined up with the headline above it.
+ */
+.carousel {
   display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  gap: 2px;
-  width: 30vw;
-  padding-top: 4px;
-  padding-right: 4px;
-  padding-bottom: 4px;
+  justify-content: safe center;
+  gap: 24px;
+  margin: auto calc(-1 * var(--gutter-x));
+  /* The block padding is the strip's minimum clearance from the copy above and
+     below it, for the short viewports where the auto margins collapse to 0. */
+  padding: 28px var(--gutter-x);
+  overflow: auto hidden;
+  /* No scroll snapping: the strip is a plain scroll region, so a flick keeps
+     its momentum and stops wherever it runs out instead of being pulled onto
+     the nearest tile. `scroll-behavior` only affects keyboard and programmatic
+     scrolling, so it does not fight a trackpad. */
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+  /* Advertises that the strip can be pushed around, for the mouse users who
+     have no flick gesture. See the script in Screenshots.astro. */
+  cursor: grab;
+  /* Softens the tiles into the edges of the window as they scroll past. */
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    #000 var(--gutter-x),
+    #000 calc(100% - var(--gutter-x)),
+    transparent 100%
+  );
+}
+
+.carousel::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * Set by the drag script for as long as a drag and its glide last.
+ *
+ * `scroll-behavior: auto` is the load-bearing one: the script moves the strip a
+ * few pixels per frame, and smooth scrolling would animate its way toward each
+ * of those in turn, which reads as the strip lagging behind the cursor.
+ */
+.carousel.is-dragging {
+  scroll-behavior: auto;
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* The strip is focusable so the arrow keys can drive it, but it is a scroll
+   region rather than a control, and a ring drawn the full width of the window
+   reads as a box around the artwork. Scrolling is its own feedback. */
+.carousel:focus-visible {
+  outline: none;
 }
 
 .shot {
   display: block;
-  flex-shrink: 0;
-  width: 100%;
-  height: auto;
-  aspect-ratio: 1920 / 1206;
+  flex: 0 0 auto;
+  width: auto;
+  /* Whichever ceiling is lower. The first keeps the tile in proportion to the
+     window; the second is the single-screen guard, so a short window shrinks
+     the tiles rather than growing a scrollbar. */
+  height: min(var(--shot-h), calc(100vh - var(--shot-budget)));
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius-shot);
   background: var(--surface-screenshot);
   overflow: hidden;
 }
@@ -354,28 +404,17 @@ a {
 
 /* --------------------------------------------------------- breakpoints --- */
 
-@media (width <= 1279px) {
-  .screenshots {
-    width: clamp(360px, 30vw, 610px);
-  }
-
-  .shot {
-    width: 100%;
-    height: auto;
-  }
-}
-
 @media (width <= 899px) {
-  .page {
-    flex-direction: column;
-    min-height: 100vh;
-    overflow: visible;
+  :root {
+    --radius-shot: 22px;
+    --gutter-x: 20px;
+    --gutter-top: 20px;
+    --shot-h: clamp(190px, 40vh, 460px);
+    --shot-budget: 448px;
   }
 
-  .hero {
-    width: auto;
-    margin: 0;
-    padding: 20px;
+  .page {
+    padding-bottom: 24px;
   }
 
   .site-header {
@@ -387,35 +426,26 @@ a {
     margin-top: 16px;
   }
 
+  .carousel {
+    gap: 16px;
+    padding-top: 24px;
+    padding-bottom: 24px;
+  }
+
   .features {
     gap: 8px;
-  }
-
-  .screenshots {
-    flex-direction: row;
-    gap: 2px;
-    width: 100%;
-    min-width: 0;
-    max-width: 100vw;
-    height: auto;
-    margin: 0;
-    padding: 2px;
-    overflow: auto hidden;
-    scrollbar-width: none;
-  }
-
-  .screenshots::-webkit-scrollbar {
-    display: none;
-  }
-
-  .shot {
-    flex-shrink: 0;
-    width: auto;
-    height: 30vh;
   }
 }
 
 @media (width <= 599px) {
+  :root {
+    --radius-shot: 18px;
+    /* Kept just under the window's width once the aspect ratio is applied, so
+       the edge fade lands beside a tile rather than across it. */
+    --shot-h: clamp(170px, 27vh, 300px);
+    --shot-budget: 438px;
+  }
+
   .headline {
     font-size: 24px;
     letter-spacing: -0.015em;
@@ -436,17 +466,11 @@ a {
     flex-wrap: wrap;
     row-gap: 12px;
   }
-
-  .shot {
-    flex-shrink: 0;
-    width: auto;
-    height: 20vh;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .brand-rule {
-    animation: none;
+  .carousel {
+    scroll-behavior: auto;
   }
 
   * {
