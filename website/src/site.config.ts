@@ -8,9 +8,12 @@
 
 const repo = 'https://github.com/BirjuVachhani/macq';
 const version = '0.1.0';
+const domain = 'macq.birju.dev';
 
 export const site = {
   name: 'MacQ',
+  domain,
+  url: `https://${domain}`,
   title: 'MacQ: menu-bar control for BenQ monitors',
   description:
     "Switch input, set brightness and volume on your BenQ monitor from the macOS menu bar. Under 5 MB, no bundled browser. Free and open source.",
@@ -23,13 +26,23 @@ export const site = {
 
   repo,
   version,
-  /** Shown next to the version. Set to null to hide it. */
-  releaseStage: 'Alpha' as string | null,
+  /** A pill next to the version, for 'Alpha' and the like. Null hides it. */
+  releaseStage: null as string | null,
   download: `${repo}/releases/download/${version}/MacQ-${version}.dmg`,
 
-  nav: [
-    { label: 'Docs', href: `${repo}/blob/main/docs/benq-ddc-reference.md`, style: 'ghost' },
-    { label: 'GitHub', href: repo, style: 'outline' },
+  /** Matches PRODUCT_BUNDLE_IDENTIFIER in app/MacQ.xcodeproj. The privacy page
+      quotes it as the path to the preferences file MacQ writes. */
+  bundleId: 'dev.birjuvachhani.macq',
+
+  /** Credited at the foot of the page. */
+  author: { name: 'Birju Vachhani', url: 'https://birju.dev' },
+
+  nav: [{ label: 'GitHub', href: repo, style: 'outline' }] as const,
+
+  /** Sits opposite the credit in the colophon, on every page. */
+  legal: [
+    { label: 'Privacy', href: '/privacy' },
+    { label: 'Terms', href: '/terms' },
   ] as const,
 
   features: [

@@ -21,11 +21,18 @@ npm run dev      # http://localhost:4321
 
 ## Layout
 
-One screen, stacked top to bottom: header, hero copy, a horizontal carousel of
-app shots, then the feature list. The carousel absorbs whatever vertical space
-is left over, which parks it in the middle of the window and keeps the features
-pinned to the bottom. Below 900px the gutters and tiles shrink, and below 600px
-the type scales down with them.
+The home page is one screen, stacked top to bottom: header, hero copy, a
+horizontal carousel of app shots, then the feature list, with the colophon on
+the last line. The carousel absorbs whatever vertical space is left over, which
+parks it in the middle of the window and keeps the features pinned to the
+bottom. Below 900px the gutters and tiles shrink, and below 600px the type
+scales down with them.
+
+The privacy and terms pages opt out of all that. They use
+[Legal.astro](src/layouts/Legal.astro), which is a plain 680px column of prose
+that grows as long as it needs to and scrolls. The home page carries a
+`page-home` class so the stylesheet can hide its scrollbar without hiding
+theirs.
 
 The carousel is the browser's own horizontal scrolling. Nothing snaps or pages:
 a flick keeps its momentum and stops where it runs out. The strip runs the full
@@ -42,17 +49,24 @@ script blocked the page still renders and the strip still scrolls.
 ```
 src/
   site.config.ts        all the copy: headline, features, version, links
+  pages/
+    index.astro         the one-screen home page
+    privacy.astro       privacy policy
+    terms.astro         terms of use
   lib/shots.ts          reads public/shots/ at build time
-  layouts/Base.astro    <head>, meta tags, global stylesheet
+  layouts/
+    Base.astro          <head>, meta tags, global stylesheet
+    Legal.astro         header, prose column and colophon, for the legal pages
   components/
-    SiteHeader.astro    app icon, wordmark and the two nav pills
+    SiteHeader.astro    app icon, wordmark and the nav pill
     Hero.astro          headline, download button, caption
     Screenshots.astro   the horizontal carousel of shots
     Shot.astro          one tile: video, image or placeholder
     Features.astro      the list under the carousel
+    Colophon.astro      the credit and legal links, at the foot of every page
     BrandMark.astro     the Q glyph, watermarked onto placeholder tiles
     AppleGlyph.astro    Apple logo on the download button
-  styles/global.css     every rule on the page
+  styles/global.css     every rule on the site
 public/                 copied into dist/ verbatim, dotfiles included
   shots/                carousel images, see its README
   app_icon.png          the header logo, resized from the app's AppLogo asset
@@ -67,8 +81,10 @@ screenshots/            full-resolution shot originals, not shipped
 
 Change `version` in [src/site.config.ts](src/site.config.ts). The download URL
 is built from it and follows the Makefile's `MacQ-<version>.dmg` naming and the
-untagged-`v` release tags already on GitHub. Drop `releaseStage` to `null` when
-MacQ is no longer alpha.
+untagged-`v` release tags already on GitHub.
+
+`releaseStage` puts a small pill next to the version, for `'Alpha'` and the
+like. It is `null`, so nothing renders.
 
 ## Screenshots
 
@@ -77,6 +93,32 @@ filename, and falls back to placeholder tiles when the folder is empty. The
 filename becomes the alt text, so name the files for what they show. See
 [public/shots/README.md](public/shots/README.md) for naming, formats and how
 the shipped WebP files are generated from the originals.
+
+## Legal pages
+
+[privacy.astro](src/pages/privacy.astro) and [terms.astro](src/pages/terms.astro)
+are prose, not components, and both carry a `Last updated` date that has to be
+changed by hand when the text changes.
+
+The privacy policy's claims are checked against the app rather than assumed: no
+network APIs anywhere in `app/`, preferences limited to the keys in
+`Core/Preferences.swift` and `Core/AliasStore.swift`, and Accessibility as the
+only permission requested. Section 3 is deliberately explicit that the brightness
+keys arrive on the general key stream, because claiming the tap only sees media
+keys would not be true. If any of that changes in the app, the policy has to
+change with it.
+
+Two known gaps, both deliberate rather than oversights:
+
+- **No governing law or jurisdiction clause in the terms.** Naming one is a
+  decision about where you are, not something to guess at.
+- **No contact email.** GitHub issues is the only contact route given.
+
+Neither page is legal advice, and neither has been reviewed by a lawyer.
+
+Astro is configured with `build.format: 'file'`, so these build to
+`privacy.html` and `terms.html` and GitHub Pages serves them at `/privacy` and
+`/terms`, which is what the colophon links to.
 
 ## Deploy
 

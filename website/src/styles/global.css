@@ -43,10 +43,11 @@
   /* Tile height, as a share of the window. See `.shot` for the other ceiling. */
   --shot-h: clamp(200px, 46vh, 560px);
   /* Every vertical pixel the tiles do not get: the header, the hero copy, the
-     feature list, the page gutters and the carousel's own padding. Measured,
-     not guessed. Bump it whenever a block above or below the strip changes
-     height, or the tiles will start pushing the page into scrolling. */
-  --shot-budget: 552px;
+     feature list, the colophon, the page gutters and the carousel's own
+     padding. Measured, not guessed. Bump it whenever a block above or below the
+     strip changes height, or the tiles will start pushing the page into
+     scrolling. */
+  --shot-budget: 592px;
 }
 
 * {
@@ -60,11 +61,18 @@ body {
   padding: 0;
   background: var(--bg);
   color: var(--ink);
+}
+
+/* The home page is sized to exactly one screen and never scrolls, so its
+   scrollbar is only ever a flicker of chrome on the way in. The legal pages are
+   long, so they keep theirs: it is how you know how much is left. */
+html:has(.page-home),
+html:has(.page-home) body {
   scrollbar-width: none;
 }
 
-html::-webkit-scrollbar,
-body::-webkit-scrollbar {
+html:has(.page-home)::-webkit-scrollbar,
+html:has(.page-home) body::-webkit-scrollbar {
   display: none;
 }
 
@@ -289,6 +297,40 @@ a {
   font-weight: 400;
 }
 
+/* ------------------------------------------------------------- colophon --- */
+
+/* Deliberately outside `.main`: in there it would be one more flex item for the
+   carousel's auto margins to push around, and the feature list would stop
+   sitting at the bottom of the screen. Out here it is just the last line on the
+   page, and `--shot-budget` accounts for the height it takes. */
+.colophon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: baseline;
+  gap: 16px;
+  margin-top: 28px;
+  color: var(--ink-50);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+/* Pushed to the far side of the line, opposite the credit. */
+.colophon-legal {
+  display: flex;
+  gap: 16px;
+  margin-left: auto;
+}
+
+.colophon-link {
+  color: var(--ink-80);
+  transition: color 0.15s;
+}
+
+.colophon-link:hover {
+  color: var(--accent);
+}
+
 /* ------------------------------------------------------------ app shots --- */
 
 /*
@@ -402,6 +444,100 @@ a {
   box-shadow: inset 0 0 0 1px var(--stroke-ghost);
 }
 
+/* ------------------------------------------------- privacy and terms --- */
+
+/*
+ * These pages opt out of the single-screen layout entirely. `.main` and the
+ * carousel's space-eating auto margins are not involved, so the column just
+ * grows to whatever the copy needs and the page scrolls.
+ */
+.legal {
+  /* Grows to fill a tall window so the colophon lands at the bottom of the
+     screen rather than floating under a short page. */
+  flex: 1 0 auto;
+  width: 100%;
+  max-width: 680px;
+  /* The measure is narrower than the page, so centre it under the full-width
+     header rather than leaving it hanging on the left. */
+  margin: 8px auto 0;
+  padding-bottom: 72px;
+  color: var(--ink-80);
+  font-size: 15px;
+  /* The body sets `line-height: 1`, which is right for the single-line labels
+     on the home page and unreadable for paragraphs. */
+  line-height: 1.65;
+}
+
+.legal h1 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 36px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.legal-updated {
+  margin: 14px 0 40px;
+  color: var(--ink-50);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.legal h2 {
+  margin: 40px 0 14px;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+}
+
+.legal p {
+  margin: 0 0 16px;
+}
+
+.legal ul {
+  margin: 0 0 16px;
+  padding-left: 22px;
+}
+
+.legal li {
+  margin-bottom: 8px;
+}
+
+.legal li::marker {
+  color: var(--ink-20);
+}
+
+.legal strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.legal code {
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--ink);
+  font-size: 13px;
+  /* Long enough to wrap mid-path on a phone rather than widen the page. */
+  word-break: break-all;
+}
+
+.legal a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--ink-20);
+  text-underline-offset: 3px;
+  transition: text-decoration-color 0.15s;
+}
+
+.legal a:hover {
+  text-decoration-color: var(--accent);
+}
+
 /* --------------------------------------------------------- breakpoints --- */
 
 @media (width <= 899px) {
@@ -410,7 +546,7 @@ a {
     --gutter-x: 20px;
     --gutter-top: 20px;
     --shot-h: clamp(190px, 40vh, 460px);
-    --shot-budget: 448px;
+    --shot-budget: 476px;
   }
 
   .page {
@@ -435,6 +571,10 @@ a {
   .features {
     gap: 8px;
   }
+
+  .colophon {
+    margin-top: 16px;
+  }
 }
 
 @media (width <= 599px) {
@@ -443,7 +583,7 @@ a {
     /* Kept just under the window's width once the aspect ratio is applied, so
        the edge fade lands beside a tile rather than across it. */
     --shot-h: clamp(170px, 27vh, 300px);
-    --shot-budget: 438px;
+    --shot-budget: 466px;
   }
 
   .headline {

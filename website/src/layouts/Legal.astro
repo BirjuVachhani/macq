@@ -1,0 +1,36 @@
+---
+/**
+ * The privacy and terms pages.
+ *
+ * These are ordinary prose rather than the home page's single screen, so they
+ * opt out of that layout entirely: no `.main`, no carousel soaking up the free
+ * space, just a column that grows as long as it needs to and scrolls.
+ */
+import Base from './Base.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import Colophon from '../components/Colophon.astro';
+import { site } from '../site.config';
+
+interface Props {
+  title: string;
+  description: string;
+  /** Rendered as written, so keep the format the same across both pages. */
+  updated: string;
+}
+
+const { title, description, updated } = Astro.props;
+---
+
+<Base title={`${title}: ${site.name}`} description={description}>
+  <div class="page">
+    <SiteHeader />
+
+    <main class="legal">
+      <h1>{title}</h1>
+      <p class="legal-updated">Last updated {updated}</p>
+      <slot />
+    </main>
+
+    <Colophon />
+  </div>
+</Base>

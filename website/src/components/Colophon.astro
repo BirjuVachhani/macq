@@ -1,0 +1,26 @@
+---
+import { site } from '../site.config';
+---
+
+{
+  /* Sits outside `.main`, so the carousel's auto margins push the feature list
+     down onto it rather than treating it as more space to absorb. */
+}
+<footer class="colophon">
+  <span>
+    Built by{' '}
+    <a class="colophon-link" href={site.author.url} rel="me noopener noreferrer" target="_blank">
+      {site.author.name}
+    </a>
+  </span>
+
+  <nav class="colophon-legal">
+    {
+      site.legal.map((item) => (
+        <a class="colophon-link" href={item.href}>
+          {item.label}
+        </a>
+      ))
+    }
+  </nav>
+</footer>

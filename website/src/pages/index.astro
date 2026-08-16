@@ -4,10 +4,13 @@ import SiteHeader from '../components/SiteHeader.astro';
 import Hero from '../components/Hero.astro';
 import Screenshots from '../components/Screenshots.astro';
 import Features from '../components/Features.astro';
+import Colophon from '../components/Colophon.astro';
 ---
 
 <Base>
-  <div class="page">
+  {/* `page-home` is what the stylesheet keys the hidden scrollbar off: this page
+      is sized to exactly one screen, the legal pages are not. */}
+  <div class="page page-home">
     <SiteHeader />
 
     <main class="main">
@@ -15,5 +18,7 @@ import Features from '../components/Features.astro';
       <Screenshots />
       <Features />
     </main>
+
+    <Colophon />
   </div>
 </Base>

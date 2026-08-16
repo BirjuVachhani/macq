@@ -1,0 +1,181 @@
+---
+import Legal from '../layouts/Legal.astro';
+import { site } from '../site.config';
+---
+
+<Legal
+  title="Terms of Use"
+  description="The terms covering MacQ, a free and open source macOS app licensed under the MIT License and provided without warranty."
+  updated="16 August 2026"
+>
+  <p>
+    <strong>The short version:</strong> MacQ is free, open source and provided as
+    is, with no warranty. It talks to your monitor's own settings over DDC/CI, so
+    please read section 5 before you use it. It is not made by or affiliated with
+    BenQ.
+  </p>
+
+  <p>
+    These terms cover the MacQ application and this website at{' '}
+    <a href={site.url}>{site.domain}</a>, both published by {site.author.name}{' '}
+    ("we", "us"). By downloading, installing or using MacQ, you agree to them. If
+    you do not agree, please do not use MacQ.
+  </p>
+
+  <h2>1. The software</h2>
+
+  <p>
+    MacQ is a macOS menu bar utility that controls compatible external monitors over
+    DDC/CI, a standard the monitor already implements for its on screen menu. It
+    runs entirely on your Mac. It is free of charge, and there is nothing to buy,
+    subscribe to or register for.
+  </p>
+
+  <h2>2. Your licence</h2>
+
+  <p>
+    MacQ is released under the MIT License, and that licence, not this page, is what
+    grants your rights to the software. It lets you use, copy, modify, merge,
+    publish, distribute, sublicense and sell copies of MacQ, subject to including
+    the copyright notice and permission notice in copies. The full text is in the{' '}
+    <a href={`${site.repo}/blob/main/LICENSE`}>LICENSE file</a>.
+  </p>
+
+  <p>
+    Where anything on this page conflicts with the MIT License, the MIT License
+    governs the software.
+  </p>
+
+  <h2>3. No affiliation with BenQ</h2>
+
+  <p>
+    MacQ is an independent project. It is not made, endorsed, sponsored or supported
+    by BenQ Corporation. "BenQ" and any related marks belong to their respective
+    owners and are used here only to describe which monitors MacQ works with. Using
+    MacQ is not a substitute for your monitor's warranty or support, and BenQ is
+    under no obligation to help with anything MacQ does.
+  </p>
+
+  <h2>4. Acceptable use</h2>
+
+  <p>You agree not to use MacQ to:</p>
+
+  <ul>
+    <li>Break any applicable law.</li>
+    <li>
+      Interfere with hardware you do not own or otherwise have permission to
+      configure.
+    </li>
+    <li>
+      Misrepresent modified versions as the official MacQ, or imply that we endorse
+      them.
+    </li>
+  </ul>
+
+  <h2>5. Hardware, DDC/CI and risk</h2>
+
+  <p>
+    This is the section worth reading twice. MacQ works by writing to your monitor's
+    own configuration over DDC/CI. That is the same mechanism the monitor's physical
+    buttons use, but it is worth understanding what it means:
+  </p>
+
+  <ul>
+    <li>
+      DDC/CI is implemented differently by different manufacturers and models. A
+      command that is harmless on one monitor may do nothing, or something
+      unexpected, on another.
+    </li>
+    <li>
+      MacQ is developed and tested against a limited set of hardware. Your monitor
+      may respond differently.
+    </li>
+    <li>
+      Changing an input source will disconnect the display you are currently looking
+      at, which is the intended behaviour, but can leave you needing the monitor's
+      physical buttons to get back.
+    </li>
+  </ul>
+
+  <p>
+    <strong>You use MacQ with your hardware at your own risk.</strong> We are not
+    responsible for any misconfiguration, malfunction, loss of display output, or
+    damage to a monitor, computer or other equipment arising from its use. If you
+    are not comfortable with that, the safe choice is not to use MacQ.
+  </p>
+
+  <h2>6. System permissions</h2>
+
+  <p>
+    Some optional features ask for macOS permissions, currently Accessibility for
+    media key routing. You choose whether to grant them, they can be revoked in
+    System Settings at any time, and MacQ works without them (minus those features).
+    What each permission is used for is set out in our{' '}
+    <a href="/privacy">Privacy Policy</a>.
+  </p>
+
+  <h2>7. No warranty</h2>
+
+  <p>
+    MacQ is provided <strong>"as is", without warranty of any kind</strong>, express
+    or implied, including but not limited to the warranties of merchantability,
+    fitness for a particular purpose, title and non infringement. We do not warrant
+    that MacQ will be uninterrupted, error free, compatible with your monitor, or
+    that any defect will be corrected. This mirrors the disclaimer in the MIT
+    License.
+  </p>
+
+  <h2>8. Limitation of liability</h2>
+
+  <p>
+    To the fullest extent permitted by law, in no event shall the authors or
+    copyright holders be liable for any claim, damages or other liability, whether
+    in an action of contract, tort or otherwise, arising from, out of or in
+    connection with MacQ or its use or other dealings in it. This includes indirect,
+    incidental, special, consequential or exemplary damages, and covers loss of
+    data, loss of profits and damage to hardware.
+  </p>
+
+  <p>
+    Some jurisdictions do not allow the exclusion of certain warranties or
+    liabilities, so parts of sections 7 and 8 may not apply to you. Nothing in these
+    terms limits liability that cannot lawfully be limited.
+  </p>
+
+  <h2>9. Support</h2>
+
+  <p>
+    MacQ is a free project maintained in its author's own time. No support,
+    maintenance, bug fix or future release is promised or guaranteed. Bug reports
+    and questions are genuinely welcome as{' '}
+    <a href={`${site.repo}/issues`}>issues on GitHub</a>, and will be looked at as
+    time allows.
+  </p>
+
+  <h2>10. Third party services</h2>
+
+  <p>
+    MacQ is distributed through GitHub, and this website is served by GitHub Pages.
+    Your use of those is subject to{' '}
+    <a href="https://docs.github.com/en/site-policy/github-terms-of-service">
+      GitHub's Terms of Service
+    </a>. We are not responsible for third party services we do not control.
+  </p>
+
+  <h2>11. Changes</h2>
+
+  <p>
+    MacQ is under active development, and features may be added, changed or removed
+    between releases. These terms may also change: the current version always lives
+    on this page with its date at the top, and every revision is visible in the{' '}
+    <a href={site.repo}>repository's history</a>. Continuing to use MacQ after a
+    change means you accept the updated terms.
+  </p>
+
+  <h2>12. Contact</h2>
+
+  <p>
+    Questions about these terms can be raised as{' '}
+    <a href={`${site.repo}/issues`}>an issue on GitHub</a>.
+  </p>
+</Legal>

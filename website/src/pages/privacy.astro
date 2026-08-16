@@ -1,0 +1,186 @@
+---
+import Legal from '../layouts/Legal.astro';
+import { site } from '../site.config';
+---
+
+<Legal
+  title="Privacy Policy"
+  description="MacQ collects nothing, sends nothing, and makes no network connections. Everything it stores stays on your Mac."
+  updated="16 August 2026"
+>
+  <p>
+    <strong>The short version:</strong> MacQ collects no data about you. It has no
+    analytics, no telemetry, no crash reporting, no accounts and no advertising. It
+    makes no network connections of any kind. Every setting it saves stays on your
+    Mac, and nobody, including its developer, can see it.
+  </p>
+
+  <p>
+    This policy explains that in full. It covers the MacQ application and this
+    website at <a href={site.url}>{site.domain}</a>. MacQ is free and open source
+    software published by {site.author.name}.
+  </p>
+
+  <h2>1. Information we collect</h2>
+
+  <p>
+    None. MacQ does not collect, transmit, sell, share or otherwise process any
+    personal information. Specifically, it does not collect:
+  </p>
+
+  <ul>
+    <li>Names, email addresses or any other contact details.</li>
+    <li>Account credentials. MacQ has no signup, no login and no user accounts.</li>
+    <li>Usage analytics, feature telemetry, diagnostics or crash reports.</li>
+    <li>Device identifiers, advertising identifiers or IP addresses.</li>
+    <li>Location data.</li>
+    <li>Anything you type, click or view on your Mac.</li>
+  </ul>
+
+  <p>
+    There is no opt out because there is nothing to opt out of, and no setting that
+    turns any of the above on.
+  </p>
+
+  <h2>2. Information stored on your Mac</h2>
+
+  <p>
+    MacQ saves your preferences so it can behave the same way the next time you open
+    it. This is stored locally by macOS, in the standard preferences file for the
+    app, and is never transmitted anywhere. It consists of:
+  </p>
+
+  <ul>
+    <li>
+      Your media key settings: whether MacQ handles the brightness and volume keys
+      at all, which rule the volume keys follow, and whether MacQ draws its own
+      level indicator.
+    </li>
+    <li>
+      Any names you give your monitor's input sources, such as renaming HDMI 1 to
+      MacBook, stored against an identifier for the monitor they belong to.
+    </li>
+    <li>Whether MacQ starts at login, which macOS itself records.</li>
+  </ul>
+
+  <p>
+    This data is yours and stays on your machine. To remove it, delete{' '}
+    <code>~/Library/Preferences/{site.bundleId}.plist</code> along with the app.
+  </p>
+
+  <h2>3. System permissions</h2>
+
+  <p>
+    MacQ asks for one optional permission, and only if you turn on the feature that
+    needs it.
+  </p>
+
+  <p>
+    <strong>Accessibility.</strong> Routing your keyboard's brightness and volume
+    keys to the monitor requires an intercepting event tap, which macOS gates behind
+    Accessibility (System Settings, then Privacy &amp; Security, then Accessibility).
+    MacQ installs no tap at all until you enable that feature, and removes it when
+    you turn the feature off.
+  </p>
+
+  <p>
+    We want to be precise about what the tap can see, because the honest answer is
+    not "only the media keys". Volume and mute arrive on a dedicated system event
+    stream that carries nothing else. Brightness does not: on most keyboards those
+    keys are delivered as ordinary key presses. Watching for them therefore means
+    watching the same stream every other keystroke travels on.
+  </p>
+
+  <p>
+    What MacQ does with that access: it reads which key an event was, acts on it if
+    it is brightness, volume or mute, and returns immediately for everything else.
+    Nothing you type is inspected further, recorded, written to disk, or sent
+    anywhere. Because MacQ has no network access at all, there is nowhere for it to
+    send anything even in principle. You can verify all of this in the{' '}
+    <a href={site.repo}>source code</a>.
+  </p>
+
+  <p>
+    MacQ does not request Input Monitoring, Screen Recording, Camera, Microphone,
+    Contacts, Calendar, Photos or Full Disk Access.
+  </p>
+
+  <h2>4. Network access</h2>
+
+  <p>
+    MacQ makes no network connections. It does not check for updates, phone home,
+    load remote content or contact any server, including any server operated by its
+    developer. There is no developer server. MacQ talks only to your monitor, over
+    the display cable, using DDC/CI.
+  </p>
+
+  <h2>5. Third party services</h2>
+
+  <p>
+    MacQ itself integrates no third party services, SDKs or trackers. Two third
+    parties are unavoidably involved around it:
+  </p>
+
+  <ul>
+    <li>
+      <strong>GitHub</strong> hosts the source code and the downloads. When you
+      download MacQ or visit its repository, GitHub receives that request and
+      handles it under{' '}
+      <a href="https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement">
+        GitHub's Privacy Statement
+      </a>. This website is served by GitHub Pages, which means GitHub also receives
+      requests for these pages. We add no analytics, cookies or tracking scripts to
+      them.
+    </li>
+    <li>
+      <strong>Apple</strong> may verify the app's notarisation when you first open
+      it, which is a macOS security feature rather than something MacQ initiates.
+      That check is handled by macOS under{' '}
+      <a href="https://www.apple.com/legal/privacy/">Apple's Privacy Policy</a>.
+    </li>
+  </ul>
+
+  <h2>6. Cookies</h2>
+
+  <p>
+    This website sets no cookies and uses no analytics, tracking pixels or
+    fingerprinting of any kind.
+  </p>
+
+  <h2>7. Children's privacy</h2>
+
+  <p>
+    MacQ is not directed at children, but since it collects no data from anyone, it
+    collects no data from children either.
+  </p>
+
+  <h2>8. Your rights</h2>
+
+  <p>
+    Privacy laws such as the GDPR and the CCPA give you rights to access, correct,
+    export and delete the personal data a company holds about you. We hold none, so
+    there is nothing to request and no request to make. The data described in
+    section 2 never leaves your Mac, which means it is already entirely under your
+    control: you can inspect it, change it or delete it yourself at any time.
+  </p>
+
+  <p>We also do not sell or share personal information, because we have none.</p>
+
+  <h2>9. Changes to this policy</h2>
+
+  <p>
+    If this policy changes, the updated version will be posted on this page with a
+    new date at the top. Because this website is open source, you can also see every
+    revision of it in the <a href={site.repo}>repository's history</a>. Any change
+    that would materially affect your privacy will be called out in the release
+    notes for the version it applies to.
+  </p>
+
+  <h2>10. Contact</h2>
+
+  <p>
+    Questions about this policy, or about anything above that seems unclear or
+    wrong, are welcome as{' '}
+    <a href={`${site.repo}/issues`}>an issue on GitHub</a>.
+  </p>
+</Legal>
