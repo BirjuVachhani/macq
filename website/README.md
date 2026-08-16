@@ -48,12 +48,14 @@ script blocked the page still renders and the strip still scrolls.
 
 ```
 src/
-  site.config.ts        all the copy: headline, features, version, links
+  site.config.ts        all the copy: headline, features, links, fallbacks
   pages/
     index.astro         the one-screen home page
     privacy.astro       privacy policy
     terms.astro         terms of use
-  lib/shots.ts          reads public/shots/ at build time
+  lib/
+    shots.ts            reads public/shots/ at build time
+    release.ts          asks GitHub for the latest release, at build time
   layouts/
     Base.astro          <head>, meta tags, global stylesheet
     Legal.astro         header, prose column and colophon, for the legal pages
@@ -79,9 +81,19 @@ screenshots/            full-resolution shot originals, not shipped
 
 ## Updating for a release
 
-Change `version` in [src/site.config.ts](src/site.config.ts). The download URL
-is built from it and follows the Makefile's `MacQ-<version>.dmg` naming and the
-untagged-`v` release tags already on GitHub.
+Nothing, normally. [lib/release.ts](src/lib/release.ts) asks the GitHub API for
+the latest release at build time and points the download button at its `.dmg`,
+so publishing a release is enough. The workflow triggers on `release: published`
+for exactly this reason: a static page is only ever as fresh as its last build.
+
+The `version` and `download` values in [src/site.config.ts](src/site.config.ts)
+are the fallback for when that lookup fails, which is warned about in the build
+log rather than treated as fatal. A stale download link beats a site that cannot
+deploy because GitHub was briefly down. Worth bumping `version` occasionally so
+the fallback stays close to reality.
+
+CI passes `GITHUB_TOKEN` to the build. It is optional: without it the lookup is
+anonymous and shares a 60-per-hour cap with everything else on the runner's IP.
 
 `releaseStage` puts a small pill next to the version, for `'Alpha'` and the
 like. It is `null`, so nothing renders.

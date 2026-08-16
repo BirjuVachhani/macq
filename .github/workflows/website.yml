@@ -82,6 +82,13 @@ jobs:
         # `npm run build` is `astro check && astro build`, so a type error in a
         # component fails here rather than shipping.
         run: npm run build
+        env:
+          # The build reads the latest release from the GitHub API to point the
+          # download button at it. Anonymous calls are capped at 60 an hour per
+          # IP and runners share IPs, so the build uses the workflow's own token
+          # to get its own quota. Without it the build still succeeds and falls
+          # back to the version in site.config.ts. `contents: read` is enough.
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Verify output
         # Cheap guards against publishing an empty or malformed artifact. Each

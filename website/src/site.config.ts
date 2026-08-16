@@ -1,9 +1,11 @@
 /**
  * Everything on the page that is copy rather than layout.
  *
- * On a new release, `version` and `download` are the only two values that need
- * to change. The DMG name follows the Makefile's `$(APP_NAME)-$(VERSION).dmg`
- * and the tag has no `v` prefix, matching the existing GitHub releases.
+ * `version` and `download` are only the fallback now. The live download button
+ * reads the latest release from the GitHub API at build time, and drops back to
+ * these two if it cannot. See lib/release.ts. The DMG name follows the
+ * Makefile's `$(APP_NAME)-$(VERSION).dmg` and the tag has no `v` prefix,
+ * matching the existing GitHub releases.
  */
 
 const repo = 'https://github.com/BirjuVachhani/macq';
