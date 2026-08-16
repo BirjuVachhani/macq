@@ -12,12 +12,37 @@ import ServiceManagement
 
 struct SettingsView: View {
     @EnvironmentObject var controller: DisplayController
+    @State private var tab: Tab = .general
 
+    private enum Tab: String, CaseIterable, Identifiable {
+        case general = "General"
+        case sources = "Sources"
+        case keyboard = "Keyboard"
+
+        var id: Self { self }
+    }
+
+    // A segmented picker in a plain stack rather than a TabView. TabView draws
+    // its own full-width tinted strip behind the tabs and pins them to the top
+    // edge of the content area, and neither is adjustable from SwiftUI. Driving
+    // the same segmented control by hand costs one @State and gives back the
+    // window background and the spacing above it.
     var body: some View {
-        TabView {
-            GeneralTab().tabItem { Label("General", systemImage: "gearshape") }
-            SourcesTab().tabItem { Label("Sources", systemImage: "rectangle.on.rectangle") }
-            KeyboardTab().tabItem { Label("Keyboard", systemImage: "keyboard") }
+        VStack(spacing: 0) {
+            Picker("Section", selection: $tab) {
+                ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize() // hug the labels instead of stretching across the window
+            .padding(.top, 14)
+            .padding(.bottom, 10)
+
+            switch tab {
+            case .general: GeneralTab()
+            case .sources: SourcesTab()
+            case .keyboard: KeyboardTab()
+            }
         }
         // min sizes let the window be resized; ideal sets the size it opens at,
         // tall enough that every setting is visible without scrolling.
@@ -129,7 +154,7 @@ private struct KeyboardTab: View {
                     Button("Open Accessibility Settings…") {
                         MediaKeyRouter.shared.requestAccessibility()
                     }
-                    Text("MacQ needs Accessibility permission to intercept the keys before macOS handles them. Nothing else is read from your keyboard: only the brightness, volume and mute keys are inspected.")
+                    Text("MacQ needs Accessibility permission to intercept the keys before macOS handles them. Keyboards send brightness as an ordinary key press, so MacQ checks which key each press was and ignores anything that is not brightness, volume or mute. Nothing you type is read, stored or sent anywhere.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -142,7 +167,7 @@ private struct KeyboardTab: View {
                     .disabled(!prefs.mediaKeysEnabled)
                 Toggle("Show an on-screen level indicator", isOn: $prefs.showOSD)
                     .disabled(!prefs.mediaKeysEnabled)
-                Text("Intercepting a key also hides the system indicator, so MacQ draws its own on the monitor.")
+                Text("Intercepting a key also hides the system indicator, so MacQ draws its own under its menu bar icon, named for the monitor it changed.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
