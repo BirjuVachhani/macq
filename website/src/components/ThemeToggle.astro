@@ -1,0 +1,115 @@
+---
+/**
+ * Light and dark switch, in the header next to the GitHub pill.
+ *
+ * The site follows the reader's system preference on its own, through
+ * `color-scheme` and the `light-dark()` pairs in global.css. This is only the
+ * override, and it is stored only when it disagrees with the system, so
+ * "follow the system" stays reachable instead of being frozen out by one click.
+ *
+ * Both icons ship and CSS picks between them off the `data-theme` attribute
+ * that the theme script in Base.astro writes. The button is hidden until that
+ * script has run, so it is never a control that does nothing.
+ */
+---
+
+<button class="pill pill-ghost theme-toggle" type="button" aria-label="Switch theme">
+  {/* Named for where the button takes you, not where you are. */}
+  <svg
+    class="icon-sun"
+    width="16"
+    height="16"
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.4"
+    stroke-linecap="round"
+    aria-hidden="true"
+  >
+    <circle cx="8" cy="8" r="3.1"></circle>
+    <path d="M8 2.8V1.5M8 13.2v1.3M13.2 8h1.3M2.8 8H1.5"></path>
+    <path d="M11.68 4.32l.92-.92M4.32 11.68l-.92.92M11.68 11.68l.92.92M4.32 4.32l-.92-.92"
+    ></path>
+  </svg>
+
+  <svg
+    class="icon-moon"
+    width="16"
+    height="16"
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M14 8.5A6 6 0 1 1 7.5 2 4.7 4.7 0 0 0 14 8.5Z"></path>
+  </svg>
+</button>
+
+<script>
+  const STORAGE_KEY = 'macq-theme';
+  /** Kept in step with `--bg` in global.css. */
+  const PAGE = { light: '#fbfbfb', dark: '#121212' };
+
+  const root = document.documentElement;
+  const button = document.querySelector<HTMLButtonElement>('.theme-toggle');
+  const systemDark = matchMedia('(prefers-color-scheme: dark)');
+
+  /** Null when storage is blocked, which Safari does in private browsing. */
+  function stored(): string | null {
+    try {
+      return localStorage.getItem(STORAGE_KEY);
+    } catch {
+      return null;
+    }
+  }
+
+  function apply(theme: 'light' | 'dark') {
+    root.dataset.theme = theme;
+    button?.setAttribute(
+      'aria-label',
+      theme === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme',
+    );
+
+    // The two <meta name="theme-color"> tags are media-scoped, which is right
+    // until a reader overrides the system and stops being right after. Pin both
+    // to what is actually on screen so a phone's browser chrome matches the
+    // page it frames.
+    for (const meta of document.querySelectorAll('meta[name="theme-color"]')) {
+      meta.setAttribute('content', PAGE[theme]);
+    }
+  }
+
+  // `can-theme` is the theme script's signal that this browser has light-dark()
+  // and there is a second palette to switch to. Without it the stylesheet has
+  // only its dark fallback and the button is not rendered.
+  if (button && root.classList.contains('can-theme')) {
+    apply(root.dataset.theme === 'light' ? 'light' : 'dark');
+
+    button.addEventListener('click', () => {
+      const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+      const system = systemDark.matches ? 'dark' : 'light';
+
+      try {
+        // Agreeing with the system again drops the override rather than
+        // recording it, so the page resumes following macOS.
+        if (next === system) localStorage.removeItem(STORAGE_KEY);
+        else localStorage.setItem(STORAGE_KEY, next);
+      } catch {
+        // Storage blocked. The choice holds for this page and no longer.
+      }
+
+      apply(next);
+    });
+
+    // macOS switches itself at sunset. Follow it, unless told otherwise.
+    systemDark.addEventListener('change', (event) => {
+      const explicit = stored();
+      if (explicit !== 'light' && explicit !== 'dark') {
+        apply(event.matches ? 'dark' : 'light');
+      }
+    });
+  }
+</script>

@@ -10,25 +10,57 @@
  * of that, and the layout does not depend on it.
  */
 
+/*
+ * Two palettes out of one list. `light-dark()` reads the page's active
+ * `color-scheme` and takes the first value under light, the second under dark,
+ * so switching theme is one property rather than a restatement of every token.
+ *
+ * The light half is not an inversion of the dark one. The same alpha does not
+ * read at the same weight in both directions: white at 50% over #121212 lands
+ * at 5.3:1, black at 50% over #fbfbfb only at 4.0:1, which fails AA for body
+ * text. So the ink ramp is matched by contrast against the page rather than by
+ * number, and the light side is written as solid greys to make that plain.
+ */
 :root {
-  --bg: #121212;
-  --surface: #323232;
-  --surface-subtle: #303030;
-  --surface-hover: #3f3f3f;
-  --surface-screenshot: #ffffff0f;
-  --surface-screenshot-border: #ffffff1a;
+  /* Which half is live. `light dark` follows the reader's system; the header
+     toggle narrows it to one. This is also what the browser paints scrollbars
+     and form controls from, which is visible on the legal pages. */
+  color-scheme: light dark;
 
-  --ink: #fff;
-  --ink-80: #fffc;
-  --ink-60: #fff9;
-  --ink-50: #ffffff80;
-  --ink-20: #ffffff33;
+  --bg: light-dark(#fbfbfb, #121212);
 
-  --stroke-ghost: #ffffff1f;
-  --stroke-hover: #ffffff2e;
+  /* The download button, and the only filled element on the page. On dark that
+     is a grey chip lifted off the background; the light equivalent of "lifted"
+     is near-black, so it stops being able to borrow --ink for its label and
+     carries its own foreground instead. */
+  --surface: light-dark(#1a1a1a, #323232);
+  --surface-ink: light-dark(#fbfbfb, #ffffff);
+  --surface-hover: light-dark(#333333, #3f3f3f);
 
-  /* Sampled from the app icon's gradient. */
-  --accent: #8fc400;
+  /* Behind the release-stage pill and inline code. Matching the dark side's
+     contrast exactly would put this at #d2d2d2, which reads as a heavy grey
+     slab on a light page: a lift off near-black is far more visible than the
+     same ratio of drop off near-white. Tuned by eye instead. */
+  --surface-subtle: light-dark(#ececec, #303030);
+  /* The wash under a ghost pill on hover. */
+  --surface-ghost-hover: light-dark(#00000008, #ffffff0a);
+
+  --surface-screenshot: light-dark(#00000008, #ffffff0f);
+  --surface-screenshot-border: light-dark(#00000014, #ffffff1a);
+
+  --ink: light-dark(#1a1a1a, #fff);
+  --ink-80: light-dark(#333333, #fffc);
+  --ink-60: light-dark(#555555, #fff9);
+  --ink-50: light-dark(#666666, #ffffff80);
+  --ink-20: light-dark(#bbbbbb, #ffffff33);
+
+  --stroke-ghost: light-dark(#d9d9d9, #ffffff1f);
+  --stroke-hover: light-dark(#c4c4c4, #ffffff2e);
+
+  /* Sampled from the app icon's gradient, then deepened for the light page.
+     #8fc400 is 9:1 on #121212 and only 2.1:1 on #fbfbfb, which is unusable for
+     the link hovers and focus rings this drives. Same hue, 5.4:1. */
+  --accent: light-dark(#4f7300, #8fc400);
 
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui,
     'Segoe UI', sans-serif;
@@ -48,6 +80,59 @@
      strip changes height, or the tiles will start pushing the page into
      scrolling. */
   --shot-budget: 592px;
+}
+
+/* What the header toggle writes on <html>. Absent, `color-scheme: light dark`
+   above leaves the choice to the reader's system. */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+/*
+ * `light-dark()` reached Baseline in 2024 and roughly one visitor in ten is on
+ * a browser older than that. There is no way to write a per-declaration
+ * fallback for it: a custom property swallows almost any token sequence at
+ * parse time and only fails when it is substituted, so a plain value written
+ * above would be overridden by the light-dark() one and then never arrive.
+ * Every colour on the page would resolve to nothing.
+ *
+ * So the dark half is restated here, flat, and those browsers get exactly the
+ * site as it was before light mode existed. The toggle hides itself to match:
+ * see the theme script in Base.astro. Keep the two halves in step.
+ */
+@supports not (color: light-dark(#000, #fff)) {
+  :root,
+  :root[data-theme='light'],
+  :root[data-theme='dark'] {
+    color-scheme: dark;
+
+    --bg: #121212;
+
+    --surface: #323232;
+    --surface-ink: #ffffff;
+    --surface-hover: #3f3f3f;
+
+    --surface-subtle: #303030;
+    --surface-ghost-hover: #ffffff0a;
+
+    --surface-screenshot: #ffffff0f;
+    --surface-screenshot-border: #ffffff1a;
+
+    --ink: #fff;
+    --ink-80: #fffc;
+    --ink-60: #fff9;
+    --ink-50: #ffffff80;
+    --ink-20: #ffffff33;
+
+    --stroke-ghost: #ffffff1f;
+    --stroke-hover: #ffffff2e;
+
+    --accent: #8fc400;
+  }
 }
 
 * {
@@ -90,7 +175,9 @@ a {
 }
 
 ::selection {
-  /* The accent is light, so the text on top of it has to be dark. */
+  /* The accent always sits opposite the page: bright green on the dark theme,
+     deep green on the light one. So the page colour is the readable text on top
+     of it either way, and this rule inverts itself with the theme. */
   background: var(--accent);
   color: var(--bg);
 }
@@ -176,7 +263,7 @@ a {
 }
 
 .pill-ghost:hover {
-  background: #ffffff0a;
+  background: var(--surface-ghost-hover);
 }
 
 .pill-outline {
@@ -185,7 +272,33 @@ a {
 
 .pill-outline:hover {
   border-color: var(--stroke-hover);
-  background: #ffffff0a;
+  background: var(--surface-ghost-hover);
+}
+
+/* Square, so it reads as an icon rather than a second label next to GitHub, and
+   so the header keeps the 40px height that --shot-budget is measured against.
+   Hidden until the theme script has confirmed there is something to toggle: no
+   JavaScript, or no light-dark(), means no second theme to switch to. */
+.theme-toggle {
+  display: none;
+  width: 40px;
+  padding: 0;
+  color: var(--ink-80);
+}
+
+:root.can-theme .theme-toggle {
+  display: inline-flex;
+}
+
+.theme-toggle:hover {
+  color: var(--ink);
+}
+
+/* One icon per theme, both shipped, with CSS picking the one that names where
+   the button will take you. Keyed off the same attribute the toggle writes. */
+:root[data-theme='dark'] .theme-toggle .icon-moon,
+:root[data-theme='light'] .theme-toggle .icon-sun {
+  display: none;
 }
 
 /* ----------------------------------------------------------------- hero --- */
@@ -222,7 +335,9 @@ a {
   padding: 0 12px;
   border-radius: var(--radius);
   background: var(--surface);
-  color: var(--ink);
+  /* Not --ink: on the light theme this chip is near-black, so its label runs
+     the opposite way to the rest of the page's text. */
+  color: var(--surface-ink);
   font-family: var(--font);
   font-size: 14px;
   font-weight: 500;
@@ -597,7 +712,10 @@ a {
     line-height: 140%;
   }
 
-  .pill {
+  /* The labelled pills shrink to their text. The toggle is an icon and stays
+     square, so it is excluded rather than left to inherit a text pill's
+     padding. */
+  .pill:not(.theme-toggle) {
     width: auto;
     padding: 0 16px;
   }

@@ -24,7 +24,48 @@ const ogImage = new URL('/og.png', Astro.site);
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
     <link rel="icon" type="image/png" href="/favicon.png" />
-    <meta name="theme-color" content="#121212" />
+
+    {/* Both halves of the palette, for the system-preference case. The theme
+        script below pins them to one value as soon as a reader overrides it. */}
+    <meta name="theme-color" content="#fbfbfb" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)" />
+
+    {/*
+      Resolves the theme before the first paint, so the page never renders in
+      one and swaps to the other. Blocking and inline for that reason: a
+      deferred script would run after the browser has already painted.
+
+      The stylesheet follows the system on its own, so this only has to do
+      something when a reader has overridden it. It writes the answer either
+      way, because the toggle's icon keys off the attribute.
+    */}
+    <script is:inline>
+      (function () {
+        var root = document.documentElement;
+
+        // Without light-dark() the stylesheet has only its flat dark fallback,
+        // so there is no second theme to reach. Leave the attribute unset and
+        // the toggle stays hidden. See the @supports block in global.css.
+        if (!window.CSS || !CSS.supports('color', 'light-dark(#000, #fff)')) return;
+
+        var stored = null;
+        try {
+          stored = localStorage.getItem('macq-theme');
+        } catch (e) {
+          // Storage blocked, as Safari does in private browsing. Fall through
+          // to the system preference.
+        }
+
+        root.dataset.theme =
+          stored === 'light' || stored === 'dark'
+            ? stored
+            : matchMedia('(prefers-color-scheme: light)').matches
+              ? 'light'
+              : 'dark';
+
+        root.classList.add('can-theme');
+      })();
+    </script>
 
     <meta property="og:title" content={site.name} />
     <meta property="og:description" content={description} />

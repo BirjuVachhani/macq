@@ -1,8 +1,9 @@
 # MacQ website
 
 The marketing site for [MacQ](../README.md), served at
-[macq.birju.dev](https://macq.birju.dev). Astro, static output, and about a
-kilobyte of JavaScript for one carousel gesture.
+[macq.birju.dev](https://macq.birju.dev). Astro, static output, and under three
+kilobytes of JavaScript, all of it inlined, for one carousel gesture and the
+theme toggle.
 
 ## Develop
 
@@ -39,7 +40,7 @@ a flick keeps its momentum and stops where it runs out. The strip runs the full
 width of the window with its edges masked to a fade, and it carries `tabindex`
 so the arrow keys drive it for anyone without a trackpad.
 
-The one script on the site lives in
+The carousel's script lives in
 [Screenshots.astro](src/components/Screenshots.astro) and covers the gestures a
 mouse does not have: click-and-drag to pan, with a decaying glide on release,
 and a vertical wheel mapped onto the strip's horizontal axis. Trackpad and touch
@@ -60,7 +61,8 @@ src/
     Base.astro          <head>, meta tags, global stylesheet
     Legal.astro         header, prose column and colophon, for the legal pages
   components/
-    SiteHeader.astro    app icon, wordmark and the nav pill
+    SiteHeader.astro    app icon, wordmark and the nav pills
+    ThemeToggle.astro   the light/dark button and the script behind it
     Hero.astro          headline, download button, caption
     Screenshots.astro   the horizontal carousel of shots
     Shot.astro          one tile: video, image or placeholder
@@ -78,6 +80,40 @@ public/                 copied into dist/ verbatim, dotfiles included
   .nojekyll             stops Pages running the output through Jekyll
 screenshots/            full-resolution shot originals, not shipped
 ```
+
+## Theme
+
+The site follows the reader's system preference, and the button in the header
+overrides it. The override is remembered in `localStorage` under `macq-theme`.
+Toggling back to whatever the system already says deletes that key rather than
+writing the same value, so "just follow the system" stays reachable and does not
+become a state you can only leave by clearing site data.
+
+Both palettes live as one list of pairs at the top of
+[global.css](src/styles/global.css), using `light-dark()`. The toggle then only
+has to write `color-scheme` on `<html>`, rather than restate every colour. The
+light half is not an inversion of the dark one: the same alpha does not read at
+the same weight in both directions, so the ink ramp is matched by contrast
+against the page instead, and the accent is deepened because `#8fc400` is 2.1:1
+on white. Each token carries the reasoning where it deviates.
+
+Two things back that up, and both have to be kept in step with the pairs:
+
+- **The `@supports not` block** further down the same file restates the dark
+  half flat, for the browsers older than `light-dark()`. This cannot be done as
+  an ordinary two-declaration fallback: a custom property swallows almost any
+  token sequence at parse time and only fails when it is substituted, so a plain
+  value written above would be overridden and then never arrive, and every
+  colour on the page would resolve to nothing.
+- **The blocking script in [Base.astro](src/layouts/Base.astro)** resolves the
+  stored choice before the first paint, so the page never renders in one theme
+  and swaps to the other. It also gates the toggle: without `light-dark()`, or
+  without JavaScript, it never adds the `can-theme` class and the button stays
+  hidden rather than sitting there as a dead control. The two `theme-color` meta
+  tags in the same file are the third copy of `--bg` and move with it.
+
+Light mode therefore needs no JavaScript at all. The script is only there for
+overriding the system and for avoiding a flash while doing it.
 
 ## Updating for a release
 

@@ -1,5 +1,6 @@
 ---
 import { site } from '../site.config';
+import ThemeToggle from './ThemeToggle.astro';
 ---
 
 <header class="site-header">
@@ -11,6 +12,10 @@ import { site } from '../site.config';
   </a>
 
   <nav class="site-nav">
+    {/* Ghost first, then the outlined link: prominence increases toward the
+        edge of the window. */}
+    <ThemeToggle />
+
     {
       site.nav.map((item) => (
         <a
