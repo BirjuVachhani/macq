@@ -322,8 +322,13 @@ final class MediaKeyRouter: ObservableObject, MediaKeyTapDelegate {
         }
     }
 
+    /// The monitor's name is the indicator's title. The indicator hangs under
+    /// MacQ's menu-bar icon rather than on the panel it just changed, so naming
+    /// the monitor is what keeps it from being an unattributed bar on a screen
+    /// that did not move.
     private func showHUD(_ glyph: MediaKeyHUD.Glyph, value: Int, maximum: Int) {
-        guard prefs.showOSD, let id = controller.display?.id else { return }
-        MediaKeyHUD.shared.show(glyph, value: value, maximum: maximum, on: id)
+        guard prefs.showOSD, let display = controller.display else { return }
+        MediaKeyHUD.shared.show(glyph, title: display.name,
+                                value: value, maximum: maximum, on: display.id)
     }
 }

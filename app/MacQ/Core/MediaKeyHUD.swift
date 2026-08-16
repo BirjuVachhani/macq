@@ -21,12 +21,23 @@
 //    locks the screen). So MacQ draws the banner itself, out of public AppKit.
 //
 //  ERAS
-//    macOS 26 and later: a Liquid Glass banner anchored under the menu bar at
-//    the trailing edge, with a continuous level track. NSGlassEffectView is
-//    public from 26.0 and weak-links automatically at this deployment target,
-//    so the only cost is the availability check.
+//    macOS 26 and later: a Liquid Glass banner naming the monitor, with a
+//    continuous level track and a knob, flanked by a quiet and an emphatic copy
+//    of the symbol. It is pinned to the dark appearance because the system's own
+//    banner is dark in both, and glass otherwise renders it as a pale slab in
+//    Light mode that reads as a stray app window.
+//    It hangs under MacQ's own menu-bar icon so the change
+//    appears where the app that made it lives. When that icon is not on screen,
+//    hidden by the user or by a menu-bar manager, or pushed off a crowded bar,
+//    it falls back to the trailing edge under the menu bar, where macOS 26 puts
+//    its own. NSGlassEffectView is public from 26.0 and weak-links
+//    automatically at this deployment target, so the only cost is the
+//    availability check.
 //    macOS 14 and 15: the centred vibrancy square with a 16-segment meter,
-//    which is what those releases actually show.
+//    which is what those releases actually show. That path is left as the
+//    replica it is: neither the title nor the menu-bar anchor appears there,
+//    since both are macOS 26 idioms and the point of that code is to look like
+//    its own era.
 //
 //  Main thread only, matching its call site inside the event-tap callback.
 //
@@ -43,6 +54,29 @@ final class MediaKeyHUD {
         case volume
         case muted
 
+        /// The low end of the range, drawn small before the track.
+        ///
+        /// The banner flanks its slider with two copies of the symbol rather
+        /// than labelling it, a quiet one at the low end and an emphatic one at
+        /// the high end, which is what tells you the bar is a range and which
+        /// way it runs. The system banner does the same.
+        var leadingSymbolName: String {
+            switch self {
+            case .brightness: return "sun.min.fill"
+            case .volume: return "speaker.fill"
+            case .muted: return "speaker.slash.fill"
+            }
+        }
+
+        /// The high end, drawn larger after the track.
+        var trailingSymbolName: String {
+            switch self {
+            case .brightness: return "sun.max.fill"
+            case .volume, .muted: return "speaker.wave.3.fill"
+            }
+        }
+
+        /// The legacy HUD draws one large glyph in the middle instead of a pair.
         var symbolName: String {
             switch self {
             case .brightness: return "sun.max.fill"
@@ -63,23 +97,61 @@ final class MediaKeyHUD {
 
     // Banner, macOS 26 and later.
     //
-    // The height and radius are a capsule: 44 tall, radius 22. The insets place
-    // it under the menu bar at the trailing edge, where macOS 26 puts its own.
-    // Measured context, not guesses about the system banner's own art: the menu
-    // bar is 33.0 pt on the built-in display (NSScreen.frame.maxY minus
-    // visibleFrame.maxY) and 0 on the external panel, which is why the vertical
-    // anchor is taken from visibleFrame instead of from a constant. The system
-    // banner's exact art has not been measured, so these are a visual match and
-    // are expected to be nudged once someone captures it side by side.
-    private static let bannerSize = CGSize(width: 196, height: 44)
-    private static let bannerCornerRadius: CGFloat = 22
+    // Two rows: the monitor's name, then the level track flanked by the quiet
+    // and emphatic copies of the symbol. The name earns its place because the
+    // banner no longer appears on the screen it is changing. It hangs under
+    // MacQ's menu-bar icon, which is often on the other display, so without a
+    // title the banner would not say what it just changed. macOS names the
+    // display in its own brightness overlay for the same reason.
+    //
+    // These are measured off a 2x capture of the macOS 26 volume banner rather
+    // than guessed: 293 x 71 pt overall, a 24 pt corner, an 18 pt inset at both
+    // ends, the title's centre 21 pt below the top edge, and the slider row's
+    // centre 24 pt above the bottom edge. Rounded to whole points below.
+    //
+    // Separately measured on this Mac, and the reason the vertical anchor comes
+    // from visibleFrame rather than a constant: the menu bar is 33.0 pt on the
+    // built-in display (NSScreen.frame.maxY minus visibleFrame.maxY) and 0 on
+    // the external panel.
+    private static let bannerHeight: CGFloat = 72
+    private static let bannerCornerRadius: CGFloat = 24
     private static let bannerEdgeInset: CGFloat = 12
-    private static let bannerTopInset: CGFloat = 6
-    private static let bannerGlyphSize: CGFloat = 20
-    private static let bannerGlyphPointSize: CGFloat = 15
-    private static let bannerLeadingInset: CGFloat = 16
-    private static let bannerTrailingInset: CGFloat = 16
-    private static let bannerGlyphToTrackGap: CGFloat = 12
+    private static let bannerLeadingInset: CGFloat = 18
+    private static let bannerTrailingInset: CGFloat = 18
+    private static let bannerTitleTopInset: CGFloat = 13
+    /// Centre of the slider row, measured up from the banner's bottom edge.
+    private static let bannerRowCentreFromBottom: CGFloat = 24
+    private static let bannerGlyphToTrackGap: CGFloat = 10
+    private static let bannerLeadingGlyphSize: CGFloat = 14
+    private static let bannerLeadingGlyphPointSize: CGFloat = 11
+    private static let bannerTrailingGlyphSize: CGFloat = 20
+    private static let bannerTrailingGlyphPointSize: CGFloat = 16
+    private static let bannerTitleFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
+
+    /// Gap between whatever the banner hangs from (the menu bar, or the icon in
+    /// it) and the top of the banner.
+    private static let bannerMenuBarGap: CGFloat = 6
+
+    /// The banner's width, chosen from the title and clamped.
+    ///
+    /// A fixed width would truncate a long display name that had room to spare,
+    /// so the width follows the name between two bounds. The lower bound is the
+    /// system banner's own width, which is what a short name like "BenQ
+    /// MA320UP" gets: shrinking to fit it would leave the slider stunted and
+    /// stop the banner reading as the thing it stands in for. The upper bound
+    /// stops a verbose name growing a banner across the screen; past it, the
+    /// label truncates instead.
+    private static let bannerMinWidth: CGFloat = 292
+    private static let bannerMaxWidth: CGFloat = 380
+
+    private static func bannerSize(for title: String) -> CGSize {
+        let measured = (title as NSString)
+            .size(withAttributes: [.font: bannerTitleFont]).width.rounded(.up)
+        let width = min(bannerMaxWidth,
+                        max(bannerMinWidth,
+                            measured + bannerLeadingInset + bannerTrailingInset))
+        return CGSize(width: width, height: bannerHeight)
+    }
 
     // Legacy, macOS 14 and 15. These are measurements of the real pre-26 HUD:
     // 200x200, horizontally centred, exactly 140.0 pt above the bottom edge of
@@ -103,27 +175,58 @@ final class MediaKeyHUD {
     // MARK: - State
 
     private var panel: NSPanel?
+    /// The legacy HUD's single central glyph. Nil on the banner path.
     private var glyphView: NSImageView?
+    /// The banner's flanking pair. Both nil on the legacy path.
+    private var leadingGlyphView: NSImageView?
+    private var trailingGlyphView: NSImageView?
+    private var titleField: NSTextField?
     private var levelView: LevelView?
     private var hideGeneration = 0
+    private var lastPlacement: String?
+
+    /// Where MacQ's menu-bar icon is, in screen coordinates, or nil when there
+    /// is no icon on screen to hang the banner from.
+    ///
+    /// A closure rather than a reference to the NSStatusItem: this file draws an
+    /// indicator and has no business knowing how the app builds its menu bar.
+    /// AppDelegate installs it once the status item exists, and it is asked
+    /// again on every show, because the icon shifts whenever another menu-bar
+    /// app comes or goes and follows the menu bar between displays.
+    var menuBarAnchor: (() -> CGRect?)?
 
     private init() {}
 
     // MARK: - API
 
-    /// Shows the indicator on `displayID` at `value`/`maximum`.
+    /// Shows the indicator for `title` at `value`/`maximum`.
+    ///
+    /// `displayID` is the monitor being changed. It chooses the screen only in
+    /// the fallback placement: when MacQ's menu-bar icon is on screen the banner
+    /// hangs under that instead, wherever it happens to be, which is exactly why
+    /// the banner has to name the monitor.
     ///
     /// Cheap to call repeatedly: the window is built once and reused, and a
     /// repeat while it is already visible only updates the level and restarts
     /// the dismissal timer.
-    func show(_ glyph: Glyph, value: Int, maximum: Int, on displayID: CGDirectDisplayID) {
+    func show(_ glyph: Glyph, title: String, value: Int, maximum: Int,
+              on displayID: CGDirectDisplayID) {
         dispatchPrecondition(condition: .onQueue(.main))
 
         let panel = ensurePanel()
-        glyphView?.image = symbol(for: glyph)
+        if Self.usesBanner {
+            leadingGlyphView?.image = symbol(named: glyph.leadingSymbolName,
+                                             pointSize: Self.bannerLeadingGlyphPointSize)
+            trailingGlyphView?.image = symbol(named: glyph.trailingSymbolName,
+                                              pointSize: Self.bannerTrailingGlyphPointSize)
+        } else {
+            glyphView?.image = symbol(named: glyph.symbolName,
+                                      pointSize: Self.legacyGlyphPointSize)
+        }
+        titleField?.stringValue = title
         levelView?.fraction = min(1, max(0, Double(value) / Double(max(1, maximum))))
 
-        position(panel, on: displayID)
+        position(panel, title: title, on: displayID)
 
         // orderFrontRegardless, not orderFront: MacQ is usually not the active
         // app when a media key is pressed, and orderFront does nothing for an
@@ -177,7 +280,9 @@ final class MediaKeyHUD {
     private func ensurePanel() -> NSPanel {
         if let panel { return panel }
 
-        let size = Self.usesBanner ? Self.bannerSize : Self.legacySize
+        // A placeholder size. Every show re-measures the banner against the
+        // title it is about to draw and sets the real frame in `position`.
+        let size = Self.usesBanner ? Self.bannerSize(for: "") : Self.legacySize
 
         // .nonactivatingPanel is the load-bearing flag: without it, ordering the
         // window in from a background app steals focus from whatever the user is
@@ -204,33 +309,85 @@ final class MediaKeyHUD {
         // Excluded from window cycling and from screenshots of "windows".
         panel.isExcludedFromWindowsMenu = true
 
-        let glyph = NSImageView()
-        glyph.imageScaling = .scaleProportionallyUpOrDown
-        glyph.contentTintColor = .labelColor
-        glyph.translatesAutoresizingMaskIntoConstraints = false
+        // The system's media banner is dark in BOTH appearances: the capture
+        // these metrics come from was taken in Light mode and is near-black.
+        // Glass follows the appearance it finds itself in, so without pinning
+        // this the banner renders as a pale frosted slab in Light mode, which
+        // reads as a stray app window rather than as a system indicator.
+        // Pinning it also resolves labelColor to white, so every colour below is
+        // stated once and is correct whichever appearance the user runs.
+        if Self.usesBanner {
+            panel.appearance = NSAppearance(named: .darkAqua)
+        }
+
+        func makeGlyphView() -> NSImageView {
+            let view = NSImageView()
+            view.imageScaling = .scaleProportionallyUpOrDown
+            view.contentTintColor = .labelColor
+            view.translatesAutoresizingMaskIntoConstraints = false
+            return view
+        }
 
         if #available(macOS 26.0, *), Self.usesBanner {
             let level = BannerLevelView()
             level.translatesAutoresizingMaskIntoConstraints = false
 
+            let leadingGlyph = makeGlyphView()
+            let trailingGlyph = makeGlyphView()
+
+            let title = NSTextField(labelWithString: "")
+            title.font = Self.bannerTitleFont
+            title.textColor = .labelColor
+            // Left-aligned, matching the system banner. Centring it reads as a
+            // notification's headline rather than as the name of the thing the
+            // slider underneath belongs to.
+            title.alignment = .left
+            title.lineBreakMode = .byTruncatingTail
+            title.maximumNumberOfLines = 1
+            title.translatesAutoresizingMaskIntoConstraints = false
+            // The banner's width is derived from this label's text, so the label
+            // must not then argue with the result: a name past bannerMaxWidth
+            // truncates inside the banner instead of stretching it wider.
+            title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            title.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
             let content = NSView(frame: CGRect(origin: .zero, size: size))
             content.autoresizingMask = [.width, .height]
-            content.addSubview(glyph)
+            content.addSubview(title)
+            content.addSubview(leadingGlyph)
+            content.addSubview(trailingGlyph)
             content.addSubview(level)
 
             NSLayoutConstraint.activate([
-                glyph.leadingAnchor.constraint(equalTo: content.leadingAnchor,
+                title.leadingAnchor.constraint(equalTo: content.leadingAnchor,
                                                constant: Self.bannerLeadingInset),
-                glyph.centerYAnchor.constraint(equalTo: content.centerYAnchor),
-                glyph.widthAnchor.constraint(equalToConstant: Self.bannerGlyphSize),
-                glyph.heightAnchor.constraint(equalToConstant: Self.bannerGlyphSize),
-
-                level.leadingAnchor.constraint(equalTo: glyph.trailingAnchor,
-                                               constant: Self.bannerGlyphToTrackGap),
-                level.trailingAnchor.constraint(equalTo: content.trailingAnchor,
+                title.trailingAnchor.constraint(equalTo: content.trailingAnchor,
                                                 constant: -Self.bannerTrailingInset),
-                level.centerYAnchor.constraint(equalTo: content.centerYAnchor),
-                level.heightAnchor.constraint(equalToConstant: BannerLevelView.trackHeight),
+                title.topAnchor.constraint(equalTo: content.topAnchor,
+                                           constant: Self.bannerTitleTopInset),
+
+                // Both glyphs are centred on the track rather than on the
+                // banner: the title occupies the upper half, so they belong to
+                // the row they label, not to the box.
+                leadingGlyph.leadingAnchor.constraint(equalTo: content.leadingAnchor,
+                                                      constant: Self.bannerLeadingInset),
+                leadingGlyph.centerYAnchor.constraint(equalTo: level.centerYAnchor),
+                leadingGlyph.widthAnchor.constraint(equalToConstant: Self.bannerLeadingGlyphSize),
+                leadingGlyph.heightAnchor.constraint(equalToConstant: Self.bannerLeadingGlyphSize),
+
+                trailingGlyph.trailingAnchor.constraint(equalTo: content.trailingAnchor,
+                                                        constant: -Self.bannerTrailingInset),
+                trailingGlyph.centerYAnchor.constraint(equalTo: level.centerYAnchor),
+                trailingGlyph.widthAnchor.constraint(equalToConstant: Self.bannerTrailingGlyphSize),
+                trailingGlyph.heightAnchor.constraint(equalToConstant: Self.bannerTrailingGlyphSize),
+
+                level.leadingAnchor.constraint(equalTo: leadingGlyph.trailingAnchor,
+                                               constant: Self.bannerGlyphToTrackGap),
+                level.trailingAnchor.constraint(equalTo: trailingGlyph.leadingAnchor,
+                                                constant: -Self.bannerGlyphToTrackGap),
+                level.centerYAnchor.constraint(equalTo: content.bottomAnchor,
+                                               constant: -Self.bannerRowCentreFromBottom),
+                level.heightAnchor.constraint(equalToConstant: BannerLevelView.viewHeight),
             ])
 
             let glass = NSGlassEffectView(frame: CGRect(origin: .zero, size: size))
@@ -249,7 +406,11 @@ final class MediaKeyHUD {
 
             panel.contentView = glass
             self.levelView = level
+            self.titleField = title
+            self.leadingGlyphView = leadingGlyph
+            self.trailingGlyphView = trailingGlyph
         } else {
+            let glyph = makeGlyphView()
             let level = ChicletLevelView(segments: Self.legacySegments)
             level.translatesAutoresizingMaskIntoConstraints = false
 
@@ -283,28 +444,37 @@ final class MediaKeyHUD {
 
             panel.contentView = effect
             self.levelView = level
+            self.glyphView = glyph
         }
 
         self.panel = panel
-        self.glyphView = glyph
         return panel
     }
 
-    private func symbol(for glyph: Glyph) -> NSImage? {
-        let pointSize = Self.usesBanner ? Self.bannerGlyphPointSize : Self.legacyGlyphPointSize
+    private func symbol(named name: String, pointSize: CGFloat) -> NSImage? {
         let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
-        return NSImage(systemSymbolName: glyph.symbolName, accessibilityDescription: nil)?
+        return NSImage(systemSymbolName: name, accessibilityDescription: nil)?
             .withSymbolConfiguration(config)
     }
 
-    /// Places the panel where that release's system indicator sits.
+    /// Places the panel: under MacQ's menu-bar icon when there is one on screen,
+    /// and otherwise where that release's own indicator sits.
     ///
     /// NSScreen.frame is AppKit's bottom-left global space, not the top-left
     /// space CGDisplayBounds uses, so the display is looked up through NSScreen
     /// rather than converted by hand.
-    private func position(_ panel: NSPanel, on displayID: CGDirectDisplayID) {
+    private func position(_ panel: NSPanel, title: String, on displayID: CGDirectDisplayID) {
+        let size = Self.usesBanner ? Self.bannerSize(for: title) : Self.legacySize
+
+        if Self.usesBanner, let anchored = anchoredFrame(size: size) {
+            notePlacement("under the menu-bar icon at x \(Int(anchored.midX.rounded()))")
+            panel.setFrame(anchored, display: false)
+            return
+        }
+
         let screen = Self.screen(for: displayID) ?? NSScreen.screens.first
         guard let screen else { return }
+        notePlacement("no menu-bar icon on screen, so top corner of display \(displayID)")
 
         let frame: CGRect
         if Self.usesBanner {
@@ -313,17 +483,62 @@ final class MediaKeyHUD {
             // the full frame on a display that has none, so a single expression
             // covers both the built-in screen and the external panel.
             let area = screen.visibleFrame
-            frame = CGRect(x: area.maxX - Self.bannerSize.width - Self.bannerEdgeInset,
-                           y: area.maxY - Self.bannerSize.height - Self.bannerTopInset,
-                           width: Self.bannerSize.width,
-                           height: Self.bannerSize.height)
+            frame = CGRect(x: area.maxX - size.width - Self.bannerEdgeInset,
+                           y: area.maxY - size.height - Self.bannerMenuBarGap,
+                           width: size.width,
+                           height: size.height)
         } else {
-            frame = CGRect(x: screen.frame.midX - Self.legacySize.width / 2,
+            frame = CGRect(x: screen.frame.midX - size.width / 2,
                            y: screen.frame.minY + Self.legacyBottomInset,
-                           width: Self.legacySize.width,
-                           height: Self.legacySize.height)
+                           width: size.width,
+                           height: size.height)
         }
         panel.setFrame(frame, display: false)
+    }
+
+    /// Records where the banner went, and only when that changes.
+    ///
+    /// "The indicator is in the wrong corner" has exactly two causes, and they
+    /// need opposite fixes: MacQ could not find its menu-bar icon, or it found
+    /// it somewhere unexpected. One line per keypress would drown the routing
+    /// log, so this speaks only when the answer is new.
+    private func notePlacement(_ text: String) {
+        guard lastPlacement != text else { return }
+        lastPlacement = text
+        MediaKeyDiagnostics.shared.note("indicator: \(text)")
+    }
+
+    /// The banner hung under MacQ's menu-bar icon, or nil when there is no icon
+    /// on screen to hang it from and the caller should place it itself.
+    private func anchoredFrame(size: CGSize) -> CGRect? {
+        guard let anchor = menuBarAnchor?(), anchor.width > 1 else { return nil }
+
+        // Which screen the icon is on is decided by its midpoint rather than by
+        // intersection: an item pushed off the end of a crowded menu bar can
+        // still report a frame that clips the screen by a pixel, and hanging the
+        // banner off a sliver of icon nobody can see is worse than falling back.
+        let middle = CGPoint(x: anchor.midX, y: anchor.midY)
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(middle) }) else {
+            return nil
+        }
+
+        // Centred under the icon, then pulled back inside the screen, since an
+        // icon near either end of the menu bar would otherwise hang the banner
+        // half off the edge.
+        let area = screen.visibleFrame
+        let minX = area.minX + Self.bannerEdgeInset
+        let maxX = max(minX, area.maxX - size.width - Self.bannerEdgeInset)
+        let x = min(max(anchor.midX - size.width / 2, minX), maxX)
+
+        // The icon's frame is the height of the menu bar on this Mac, but that
+        // is not guaranteed across displays or releases, so the banner hangs
+        // from whichever of the two edges is lower and stays clear of the bar
+        // either way.
+        let top = min(anchor.minY, area.maxY)
+        return CGRect(x: x,
+                      y: top - Self.bannerMenuBarGap - size.height,
+                      width: size.width,
+                      height: size.height)
     }
 
     private static func screen(for displayID: CGDirectDisplayID) -> NSScreen? {
@@ -359,25 +574,47 @@ private class LevelView: NSView {
     }
 }
 
-/// macOS 26: one continuous capsule track, the way the system banner draws it.
+/// macOS 26: a continuous capsule track with a round knob riding on it, the way
+/// the system banner draws it.
+///
+/// The view is as tall as the knob rather than as tall as the track, so the knob
+/// has room instead of being clipped at top and bottom; the track is drawn
+/// centred inside that height.
 private final class BannerLevelView: LevelView {
 
-    static let trackHeight: CGFloat = 8
+    static let viewHeight: CGFloat = 18
+    static let trackHeight: CGFloat = 6
+    static let knobDiameter: CGFloat = 18
 
     override func draw(_ dirtyRect: NSRect) {
-        let radius = bounds.height / 2
+        let trackRadius = Self.trackHeight / 2
+        let track = NSRect(x: 0,
+                           y: (bounds.height - Self.trackHeight) / 2,
+                           width: bounds.width,
+                           height: Self.trackHeight)
 
-        NSColor.labelColor.withAlphaComponent(0.20).setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+        NSColor.labelColor.withAlphaComponent(0.25).setFill()
+        NSBezierPath(roundedRect: track, xRadius: trackRadius, yRadius: trackRadius).fill()
 
-        guard fraction > 0 else { return }
-        // A fill narrower than the track becomes a squashed lozenge, so the fill
-        // never goes below one track height: at the lowest non-zero step the
-        // indicator reads as a dot rather than as a sliver.
-        let width = max(bounds.height, bounds.width * CGFloat(fraction))
-        let filled = NSRect(x: 0, y: 0, width: width, height: bounds.height)
+        // The knob's centre travels between the ends inset by its own radius, so
+        // at 0 and at 1 it sits flush inside the track instead of hanging off
+        // either end. The fill follows the knob rather than the raw fraction,
+        // which is what keeps the two from drifting apart at the extremes.
+        let radius = Self.knobDiameter / 2
+        let centre = radius + max(0, bounds.width - Self.knobDiameter) * CGFloat(fraction)
+
+        if centre > trackRadius {
+            let filled = NSRect(x: 0, y: track.minY, width: centre, height: Self.trackHeight)
+            NSColor.labelColor.setFill()
+            NSBezierPath(roundedRect: filled, xRadius: trackRadius, yRadius: trackRadius).fill()
+        }
+
+        let knob = NSRect(x: centre - radius,
+                          y: (bounds.height - Self.knobDiameter) / 2,
+                          width: Self.knobDiameter,
+                          height: Self.knobDiameter)
         NSColor.labelColor.setFill()
-        NSBezierPath(roundedRect: filled, xRadius: radius, yRadius: radius).fill()
+        NSBezierPath(ovalIn: knob).fill()
     }
 }
 

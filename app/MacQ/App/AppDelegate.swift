@@ -72,6 +72,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         }
         button.action = #selector(togglePopover(_:))
         button.target = self
+
+        // The media-key level indicator hangs under this icon, so it has to know
+        // where the icon ended up. A closure rather than the status item itself
+        // keeps MediaKeyHUD out of the app layer, and it is asked again on every
+        // show because the icon shifts whenever another menu-bar app comes or
+        // goes and follows the menu bar between displays.
+        MediaKeyHUD.shared.menuBarAnchor = { [weak self] in self?.statusItemScreenFrame }
+    }
+
+    /// MacQ's menu-bar icon in screen coordinates, or nil when there is no icon
+    /// on screen: the user or a menu-bar manager has hidden the item, or the
+    /// window server never placed it.
+    ///
+    /// A crowded menu bar (on a MacBook, usually the notch) can leave an item
+    /// placed but never drawn, which `isVisible` still reports as true, so the
+    /// frame is sanity-checked rather than trusted. Callers treat nil as "put it
+    /// somewhere else", not as an error.
+    private var statusItemScreenFrame: CGRect? {
+        guard let statusItem, statusItem.isVisible,
+              let button = statusItem.button,
+              let window = button.window else { return nil }
+        let frame = window.convertToScreen(button.convert(button.bounds, to: nil))
+        guard frame.width > 1, frame.height > 1 else { return nil }
+        return frame
     }
 
     private func setUpPopover() {
@@ -156,6 +180,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         NSApp.activate(ignoringOtherApps: true)
         window.center() // open in the middle of the screen (size is settled by now)
         window.makeKeyAndOrderFront(nil)
+        // Set after the window is on screen: SwiftUI writes this property itself
+        // while it lays the hosted content out, and sees a scrollable Form, so a
+        // value set at construction time is overwritten before it is ever drawn.
+        // Both windows put plain background under the titlebar rather than a list
+        // that scrolls beneath it, so the separator has nothing to separate.
+        DispatchQueue.main.async {
+            window.titlebarSeparatorStyle = .none
+            window.titlebarAppearsTransparent = true
+        }
     }
 
     // MARK: - NSWindowDelegate
