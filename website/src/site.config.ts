@@ -9,7 +9,7 @@
  */
 
 const repo = 'https://github.com/BirjuVachhani/macq';
-const version = '0.1.0';
+const version = '0.2.0';
 const domain = 'macq.birju.dev';
 
 export const site = {
