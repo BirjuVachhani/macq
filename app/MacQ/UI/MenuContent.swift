@@ -11,6 +11,7 @@ import AppKit
 
 struct MenuContent: View {
     @EnvironmentObject var controller: DisplayController
+    @ObservedObject private var prefs = Preferences.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -19,6 +20,9 @@ struct MenuContent: View {
 
             if controller.availability.isAvailable {
                 sourcesSection
+                if controller.supportsAutoInputDetect {
+                    autoDetectToggle
+                }
                 if controller.supportsBrightness || controller.supportsVolume {
                     Divider()
                     controlsSection
@@ -73,6 +77,32 @@ struct MenuContent: View {
                 .disabled(controller.isBusy)
             }
         }
+    }
+
+    // MARK: Auto input detect
+
+    private var autoDetectToggle: some View {
+        Toggle(isOn: Binding(
+            get: { prefs.preserveAutoInputDetect },
+            set: { controller.setAutoInputDetect($0) }
+        )) {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .frame(width: 18)
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Auto input detect")
+                        .font(.subheadline.weight(.medium))
+                    Text("Let the monitor pick a live source")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .toggleStyle(.switch)
+        .controlSize(.mini)
+        .disabled(controller.isBusy)
+        .padding(.horizontal, 8)
     }
 
     // MARK: Brightness / volume

@@ -23,6 +23,12 @@ in [docs/benq-ddc-reference.md](docs/benq-ddc-reference.md).
 - **Aliases for input sources.** Rename each source per monitor (Settings >
   Sources) so the list reads "MacBook" and "Work PC" instead of "HDMI 1" and
   "HDMI 2". Names persist.
+- **Auto input detect toggle** (VCP `0x60`). Keep the monitor's built-in auto
+  input detection on, so powering on a newly connected source switches to it
+  automatically, or turn it off to hold the current input. Switching an input
+  from MacQ momentarily pauses auto detection (the panel otherwise reverts the
+  choice) and turns it back on when the toggle is on. In the popover and Settings
+  > Sources, on by default.
 - **Brightness control** (VCP `0x10`) and **volume control** (VCP `0x62`, scaled
   to the maximum the monitor reports; the MA320UP reports 50). Both sliders
   update the display live, coalescing writes to about 20 per second during a drag
@@ -268,6 +274,13 @@ and disables the panel's auto input switching (`0xF6`) first, because auto
 switching otherwise reverts a manual selection. The full sequence and the reasons
 behind each step are in the
 [DDC reference](docs/benq-ddc-reference.md#input-source-0x60).
+
+The disable during a switch is momentary. By default MacQ turns auto input
+detection back on once the switch settles, and re-asserts it whenever the monitor
+reconnects, so the panel keeps auto-selecting a newly powered-on source the way it
+did before MacQ touched it. The **Auto input detect** toggle (in the menu-bar
+popover and in Settings > Sources) controls this: leave it on to preserve auto
+detection, turn it off to keep the monitor on whatever input MacQ last selected.
 
 ## Contributing
 

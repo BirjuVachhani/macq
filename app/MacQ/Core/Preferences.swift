@@ -55,6 +55,7 @@ final class Preferences: ObservableObject {
         static let volumeKeysEnabled = "volumeKeysEnabled"
         static let volumeKeyRule = "volumeKeyRule"
         static let showOSD = "showOSD"
+        static let preserveAutoInputDetect = "preserveAutoInputDetect"
     }
 
     private let defaults: UserDefaults
@@ -84,6 +85,20 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(showOSD, forKey: Key.showOSD) }
     }
 
+    /// Keep the monitor's built-in auto input detection (VCP 0xF6) enabled.
+    ///
+    /// On by default, so MacQ leaves the panel behaving the way it shipped:
+    /// powering on a newly connected source lets the monitor switch to it on
+    /// its own. Switching an input from MacQ still works with this on, because
+    /// auto detection is disabled only for the moment of the switch (the panel
+    /// otherwise races and reverts the choice) and re-enabled once it settles;
+    /// DisplayController also re-asserts it on every bind. With this off, MacQ
+    /// leaves auto detection disabled, so the monitor stays on its current input
+    /// until something changes it explicitly.
+    @Published var preserveAutoInputDetect: Bool {
+        didSet { defaults.set(preserveAutoInputDetect, forKey: Key.preserveAutoInputDetect) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         // The sub-toggles default to on so that flipping the master switch is
@@ -96,11 +111,15 @@ final class Preferences: ObservableObject {
             Key.brightnessKeysEnabled: true,
             Key.volumeKeysEnabled: true,
             Key.showOSD: true,
+            // On by default so MacQ restores/keeps the monitor's own auto input
+            // detection rather than silently leaving it disabled after a switch.
+            Key.preserveAutoInputDetect: true,
         ])
         mediaKeysEnabled = defaults.bool(forKey: Key.mediaKeysEnabled)
         brightnessKeysEnabled = defaults.bool(forKey: Key.brightnessKeysEnabled)
         volumeKeysEnabled = defaults.bool(forKey: Key.volumeKeysEnabled)
         showOSD = defaults.bool(forKey: Key.showOSD)
+        preserveAutoInputDetect = defaults.bool(forKey: Key.preserveAutoInputDetect)
         volumeKeyRule = defaults.string(forKey: Key.volumeKeyRule)
             .flatMap(VolumeKeyRule.init(rawValue:)) ?? .followAudioDevice
     }

@@ -38,6 +38,11 @@ final class DisplayController: ObservableObject {
     @Published private(set) var supportsMute = false
     @Published private(set) var isMuted = false
 
+    // Auto input detection (VCP 0xF6). Only surfaced when the panel advertises
+    // or answers the code; the toggle that drives it lives in Preferences, and
+    // DisplayController reconciles the panel to that preference on every bind.
+    @Published private(set) var supportsAutoInputDetect = false
+
     /// Whether macOS is currently playing through this monitor.
     ///
     /// This is routing information, not permission. It decides whether the
@@ -114,6 +119,11 @@ final class DisplayController: ObservableObject {
         refreshGeneration &+= 1
         let generation = refreshGeneration
 
+        // Snapshot the auto-detect preference here, on the main thread, so the
+        // reconcile on the DDC queue below never reads the @Published value off
+        // the main thread.
+        let preserveAuto = Preferences.shared.preserveAutoInputDetect
+
         let displays = DisplayDiscovery.externalDisplays()
         NSLog("MacQ.refresh: externalDisplays=\(displays.count) names=\(displays.map { $0.name })")
         isBusy = true
@@ -137,6 +147,7 @@ final class DisplayController: ObservableObject {
                     self.supportsBrightness = false
                     self.supportsVolume = false
                     self.supportsMute = false
+                    self.supportsAutoInputDetect = false
                     self.monitorIsAudioOutput = false
                     self.isBusy = false
                     self.lastSyncText = self.stamp("No external monitor")
@@ -169,6 +180,7 @@ final class DisplayController: ObservableObject {
                     self.supportsBrightness = false
                     self.supportsVolume = false
                     self.supportsMute = false
+                    self.supportsAutoInputDetect = false
                     self.monitorIsAudioOutput = false
                     self.isBusy = false
                     self.lastSyncText = self.stamp("DDC/CI not responding")
@@ -204,6 +216,21 @@ final class DisplayController: ObservableObject {
             self.pollMute = supportsM
             let audioIsOurs = MonitorAudioBinding.shared.isMonitorTheDefaultOutput()
 
+            // Auto input detection (0xF6). Read it to learn support and, when the
+            // panel answers, reconcile it to the user's preference: a manual
+            // switch (or another tool) may have left it disabled, and this is
+            // where MacQ puts it back. Only write when it actually differs, so a
+            // routine refresh does not spend an NVRAM write on every bind.
+            let mayHaveAuto = self.caps?.supports(VCP.autoInputSwitch) ?? true
+            let autoReading = mayHaveAuto ? ddc.getVCP(VCP.autoInputSwitch) : nil
+            let supportsAuto = (self.caps?.supports(VCP.autoInputSwitch) ?? false) || autoReading != nil
+            if let autoReading {
+                let desired: UInt16 = preserveAuto ? 1 : 0
+                if autoReading.current != desired {
+                    ddc.setVCP(VCP.autoInputSwitch, value: desired)
+                }
+            }
+
             let controllable = (reading != nil) || (bReading != nil) || (vReading != nil) || (self.caps != nil)
             let activeValue = reading.map { UInt8($0.current & 0xFF) }
 
@@ -235,6 +262,7 @@ final class DisplayController: ObservableObject {
                 self.monitorIsAudioOutput = audioIsOurs
                 self.supportsMute = supportsM
                 if supportsM { self.isMuted = muted }
+                self.supportsAutoInputDetect = supportsAuto
                 self.isBusy = false
                 self.lastSyncText = self.stamp(controllable ? "Synced" : "DDC/CI not responding")
 
@@ -263,6 +291,9 @@ final class DisplayController: ObservableObject {
     func selectInput(_ source: InputSource) {
         guard availability.isAvailable else { return }
         isBusy = true
+        // Snapshot on the main thread (see performRefresh); decides whether auto
+        // detection is turned back on once the switch has settled.
+        let preserveAuto = Preferences.shared.preserveAutoInputDetect
 
         queue.async { [weak self] in
             // ddc is queue-confined; whatever it currently is, is correct here
@@ -273,6 +304,9 @@ final class DisplayController: ObservableObject {
             }
 
             // Stop the panel's auto input detection from racing the selection.
+            // It is turned back on after the switch settles when the user wants
+            // it preserved (see below); the disable is required either way,
+            // because the panel otherwise reverts a manual choice mid-switch.
             ddc.setVCP(VCP.autoInputSwitch, value: 0)
             usleep(300_000)
 
@@ -297,6 +331,16 @@ final class DisplayController: ObservableObject {
             let reading = ddc.getVCP(VCP.inputSource)
             NSLog("MacQ.selectInput: \(self.label(for: source)) tried=\(source.writeCandidates.map { String(format: "0x%02X", $0) }) used=0x\(String(usedValue, radix: 16)) confirmed=\(confirmed) readBack=\(reading.map { String(format: "0x%02X", UInt8($0.current & 0xFF)) } ?? "nil")")
 
+            // Re-enable auto detection now that the switch has settled, so the
+            // panel is left the way the user asked. Safe after the settle: the
+            // panel only reverts a selection while it is still hunting during
+            // the switch. If the switch moved to an input with no live source
+            // the DDC link may already be gone and this write is a harmless
+            // no-op; the next successful bind reconciles 0xF6 regardless.
+            if preserveAuto {
+                ddc.setVCP(VCP.autoInputSwitch, value: 1)
+            }
+
             self.publish {
                 if let reading { self.activeInputReadValue = UInt8(reading.current & 0xFF) }
                 self.isBusy = false
@@ -304,6 +348,21 @@ final class DisplayController: ObservableObject {
                     ? "Switched to \(self.label(for: source))"
                     : "Could not switch to \(self.label(for: source))")
             }
+        }
+    }
+
+    // MARK: - Auto input detection
+
+    /// Records the user's auto-input-detection choice and applies it to the
+    /// panel right away. The refresh path also reconciles 0xF6 on every bind, so
+    /// this exists only so flipping the toggle takes effect without waiting for
+    /// the next refresh.
+    func setAutoInputDetect(_ on: Bool) {
+        Preferences.shared.preserveAutoInputDetect = on
+        guard availability.isAvailable else { return }
+        queue.async { [weak self] in
+            guard let self, let ddc = self.ddc else { return }
+            ddc.setVCP(VCP.autoInputSwitch, value: on ? 1 : 0)
         }
     }
 

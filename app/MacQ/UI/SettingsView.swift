@@ -108,9 +108,22 @@ private struct GeneralTab: View {
 
 private struct SourcesTab: View {
     @EnvironmentObject var controller: DisplayController
+    @ObservedObject private var prefs = Preferences.shared
 
     var body: some View {
         Form {
+            if controller.supportsAutoInputDetect {
+                Section("Auto input detection") {
+                    Toggle("Let the monitor auto-select a live source", isOn: Binding(
+                        get: { prefs.preserveAutoInputDetect },
+                        set: { controller.setAutoInputDetect($0) }
+                    ))
+                    Text("When on, MacQ keeps the monitor's built-in input auto detection enabled, so powering on a newly connected source switches to it automatically. Switching inputs from MacQ still works: auto detection is paused only for the moment of the switch, then turned back on. When off, MacQ leaves auto detection disabled and the monitor stays on its current input.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             if controller.display != nil, !controller.sources.isEmpty {
                 Section("Rename input sources") {
                     ForEach(controller.sources) { source in
@@ -122,7 +135,7 @@ private struct SourcesTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-            } else {
+            } else if !controller.supportsAutoInputDetect {
                 Text("Connect a monitor to configure its input sources.")
                     .foregroundStyle(.secondary)
             }
