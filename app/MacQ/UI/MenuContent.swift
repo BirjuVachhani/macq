@@ -145,10 +145,16 @@ struct MenuContent: View {
     }
 
     private var unavailableView: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle")
-                .foregroundStyle(.orange)
-            Text(controller.availability.reason ?? "Unavailable")
+        // A monitor MacQ itself turned off is unavailable on purpose; the
+        // generic reason ("enable DDC/CI in the OSD") would be wrong and
+        // alarming there, so that state gets its own calm message.
+        let offByMacQ = controller.powerState == .offByMacQ
+        return HStack(spacing: 8) {
+            Image(systemName: offByMacQ ? "moon.zzz" : "exclamationmark.triangle")
+                .foregroundStyle(offByMacQ ? Color.secondary : Color.orange)
+            Text(offByMacQ
+                 ? "Monitor is off. Use Wake monitor below."
+                 : (controller.availability.reason ?? "Unavailable"))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -160,6 +166,25 @@ struct MenuContent: View {
 
     private var actions: some View {
         VStack(spacing: 2) {
+            if controller.showsPowerActions {
+                MenuActionRow(title: "Turn monitor off", systemImage: "moon.fill") {
+                    controller.turnMonitorOff()
+                }
+                .disabled(!controller.availability.isAvailable
+                          || !controller.supportsPowerControl
+                          || controller.powerState != .normal
+                          || controller.isBusy)
+                // Deliberately gated only on a wake already in flight: a
+                // sleeping panel reads as unavailable and cannot answer a
+                // capability probe, and the recovery ladder flips isBusy while
+                // retrying, so any of those gates would lock the user out of
+                // the one action that helps.
+                MenuActionRow(title: controller.powerState == .waking ? "Waking monitor…" : "Wake monitor",
+                              systemImage: "power.circle") {
+                    controller.wakeMonitor()
+                }
+                .disabled(controller.powerState == .waking)
+            }
             MenuActionRow(title: "Sync now", systemImage: "arrow.clockwise") {
                 controller.refresh()
             }

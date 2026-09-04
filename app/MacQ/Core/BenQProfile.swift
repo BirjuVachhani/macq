@@ -44,4 +44,24 @@ enum BenQProfile {
                         fallbackWriteValues: $0.fallback)
         }
     }
+
+    // MARK: Power mode (VCP 0xD6)
+
+    /// The panel's "on" value. This is the only 0xD6 reading ever observed live:
+    /// Display Pilot 2 read 0x60 while the panel was on and driving the Mac
+    /// (research/logs/ddc-vcp-evidence.txt). Writing it back restores the exact
+    /// observed on-state.
+    static let powerOn: UInt16 = 0x60
+
+    /// PROVISIONAL until the 0xD6 bench experiment runs against the panel (it
+    /// was not connected at implementation time). The advertised set is
+    /// `D6(50 60 90 A0)` with 0x60 confirmed as "on"; the remaining candidates
+    /// are 0x50, 0x90 and 0xA0, and their DPMS mapping is unidentified. 0x90 is
+    /// the working hypothesis for "standby that keeps DDC alive": the values
+    /// pair up as 0x40-group (0x50, 0x60) and 0x80-group (0x90, 0xA0), with the
+    /// low nibble matching the OSD Deep Sleep flag pair (OffFlag 0x10 /
+    /// OnFlag 0x20 in Display Pilot 2's model config), which reads as
+    /// on/standby x deep-sleep-off/on. If the panel ignores the write, the off
+    /// action reports failure and reverts (see DisplayController.turnMonitorOff).
+    static let powerOff: UInt16 = 0x90
 }
