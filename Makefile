@@ -3,7 +3,8 @@
 #   make build          compile a universal Release .app (unsigned)
 #   make sign           codesign it with Developer ID + hardened runtime
 #   make notarize       submit to Apple, wait for the ticket, staple it
-#   make dmg            wrap the stapled app in a distributable .dmg
+#   make dmg            clean, build, then wrap the app in a distributable .dmg
+#   make dmg-package    wrap the app already in artifacts/, without rebuilding
 #   make notarize-dmg   notarize and staple the .dmg itself
 #   make release        all of the above, in order
 #
@@ -202,7 +203,7 @@ notarize: ## Submit the signed .app to Apple, wait, then staple the ticket
 .PHONY: notarize-dmg
 notarize-dmg: ## Submit the .dmg to Apple, wait, then staple the ticket
 	$(call require_notary)
-	@if [ ! -f "$(DMG)" ]; then echo "error: $(DMG) not found - run 'make dmg' first."; exit 1; fi
+	@if [ ! -f "$(DMG)" ]; then echo "error: $(DMG) not found - run 'make dmg-package' first."; exit 1; fi
 	@$(MAKE) --no-print-directory notary-submit SUBMIT_PATH="$(DMG)"
 	@echo "==> Stapling ticket to $(DMG)"
 	@xcrun stapler staple "$(DMG)"
@@ -229,8 +230,18 @@ notary-submit:
 
 # ------------------------------------------------------------------- dmg ---
 
+# `make dmg` is the one-shot local command: clear out previous output, compile a
+# fresh app, and package it. Packaging alone is `dmg-package`, so `release` can
+# wrap the app it has just signed and notarized instead of discarding it and
+# rebuilding an unsigned one.
 .PHONY: dmg
-dmg: ## Build a distributable .dmg from the signed, stapled app
+dmg: ## Clean, build, then package the app into a distributable .dmg
+	@$(MAKE) --no-print-directory clean
+	@$(MAKE) --no-print-directory build
+	@$(MAKE) --no-print-directory dmg-package
+
+.PHONY: dmg-package
+dmg-package: ## Package the app already in artifacts/ into a .dmg, without rebuilding
 	$(call require_app)
 	@if ! codesign --verify --strict "$(APP)" >/dev/null 2>&1; then \
 		echo "warning: $(APP) is not validly signed; this DMG is for local testing only."; \
@@ -289,7 +300,7 @@ release: ## Full pipeline: build, sign, notarize, dmg, notarize dmg, verify
 	@$(MAKE) --no-print-directory build
 	@$(MAKE) --no-print-directory sign
 	@$(MAKE) --no-print-directory notarize
-	@$(MAKE) --no-print-directory dmg
+	@$(MAKE) --no-print-directory dmg-package
 	@$(MAKE) --no-print-directory notarize-dmg
 	@$(MAKE) --no-print-directory verify
 	@echo
