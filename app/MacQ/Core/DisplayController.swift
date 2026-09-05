@@ -443,15 +443,31 @@ final class DisplayController: ObservableObject {
         powerState = .offByMacQ
         lastPowerTargetID = id
 
-        let turnedOff = DisplayReplug.setDisplay(id, enabled: false)
-        NSLog("MacQ.power: off via display disable %u ok=%@", id, turnedOff ? "true" : "false")
+        queue.async { [weak self] in
+            guard let self else { return }
 
-        isBusy = false
-        if turnedOff {
-            lastSyncText = stamp("Monitor turned off")
-        } else {
-            powerState = .normal
-            lastSyncText = stamp("Monitor did not turn off")
+            // Suppress the panel's auto input detection first. Dropping the
+            // signal is exactly the event it hunts on: left enabled, it scans
+            // the other ports and, if anything live is attached (a second
+            // machine on HDMI), switches to it and stays awake. That turns
+            // "off" into "hand the monitor to the other computer". Same reason
+            // and same idiom as the disable in selectInput. The next successful
+            // bind after a wake reconciles 0xF6 back to the preference.
+            self.ddc?.setVCP(VCP.autoInputSwitch, value: 0)
+            usleep(300_000)
+
+            self.publish {
+                let turnedOff = DisplayReplug.setDisplay(id, enabled: false)
+                NSLog("MacQ.power: off via display disable %u ok=%@", id, turnedOff ? "true" : "false")
+
+                self.isBusy = false
+                if turnedOff {
+                    self.lastSyncText = self.stamp("Monitor turned off")
+                } else {
+                    self.powerState = .normal
+                    self.lastSyncText = self.stamp("Monitor did not turn off")
+                }
+            }
         }
     }
 

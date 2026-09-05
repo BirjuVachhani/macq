@@ -102,7 +102,6 @@ struct MenuContent: View {
         .toggleStyle(.switch)
         .controlSize(.mini)
         .disabled(controller.isBusy)
-        .padding(.horizontal, 8)
     }
 
     // MARK: Brightness / volume
@@ -148,12 +147,19 @@ struct MenuContent: View {
         // A monitor MacQ itself turned off is unavailable on purpose; the
         // generic reason ("enable DDC/CI in the OSD") would be wrong and
         // alarming there, so that state gets its own calm message.
+        //
+        // The wording says "connection" on purpose. What MacQ switched off is
+        // this Mac's link to the panel, and the panel can be lit again without
+        // MacQ knowing: press its power button, or let it find another machine
+        // on a second input. Claiming "the monitor is off" next to a screen
+        // that is visibly on reads as a bug, and Sync now cannot fix it,
+        // because with the link disabled there is nothing left to sync.
         let offByMacQ = controller.powerState == .offByMacQ
         return HStack(spacing: 8) {
             Image(systemName: offByMacQ ? "moon.zzz" : "exclamationmark.triangle")
                 .foregroundStyle(offByMacQ ? Color.secondary : Color.orange)
             Text(offByMacQ
-                 ? "Monitor is off. Use Wake monitor below."
+                 ? "MacQ turned off this Mac's connection to the monitor. Use Wake monitor to reconnect."
                  : (controller.availability.reason ?? "Unavailable"))
                 .font(.callout)
                 .foregroundStyle(.secondary)
