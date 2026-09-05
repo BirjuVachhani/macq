@@ -82,25 +82,30 @@ struct MenuContent: View {
     // MARK: Auto input detect
 
     private var autoDetectToggle: some View {
-        Toggle(isOn: Binding(
-            get: { prefs.preserveAutoInputDetect },
-            set: { controller.setAutoInputDetect($0) }
-        )) {
-            HStack(spacing: 10) {
-                Image(systemName: "sparkle.magnifyingglass")
-                    .frame(width: 18)
+        // Laid out by hand rather than as Toggle's own label: the switch style
+        // reserves trailing slack next to a multi-line label, which leaves the
+        // switch floating short of the popover's content edge. A Spacer pins it
+        // flush with the dividers and the source rows' trailing text.
+        HStack(spacing: 10) {
+            Image(systemName: "sparkle.magnifyingglass")
+                .frame(width: 18)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Auto input detect")
+                    .font(.subheadline.weight(.medium))
+                Text("Let the monitor pick a live source")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Auto input detect")
-                        .font(.subheadline.weight(.medium))
-                    Text("Let the monitor pick a live source")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
             }
+            Spacer(minLength: 8)
+            Toggle("Auto input detect", isOn: Binding(
+                get: { prefs.preserveAutoInputDetect },
+                set: { controller.setAutoInputDetect($0) }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.mini)
         }
-        .toggleStyle(.switch)
-        .controlSize(.mini)
         .disabled(controller.isBusy)
     }
 
