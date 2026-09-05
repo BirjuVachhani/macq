@@ -221,7 +221,11 @@ final class DisplayController: ObservableObject {
                     self.supportsVolume = false
                     self.supportsMute = false
                     self.supportsAutoInputDetect = false
-                    self.supportsPowerControl = false
+                    // Power control runs through the display link, not DDC, so a
+                    // panel that has stopped answering VCP reads can still be
+                    // switched off and back on.
+                    self.supportsPowerControl = true
+                    self.lastPowerTargetID = chosen.id
                     self.monitorIsAudioOutput = false
                     self.isBusy = false
                     self.lastSyncText = self.stamp("DDC/CI not responding")
@@ -260,13 +264,6 @@ final class DisplayController: ObservableObject {
             let muted = mReading.map { $0.current == VCPValue.muteOn } ?? false
             self.pollMute = supportsM
             let audioIsOurs = MonitorAudioBinding.shared.isMonitorTheDefaultOutput()
-
-            // Power mode (0xD6). The read serves two purposes: it infers support
-            // when capabilities are unknown, and its value reconciles powerState
-            // when the user woke or slept the panel outside MacQ.
-            let mayHavePower = self.caps?.supports(VCP.powerMode) ?? true
-            let pReading = mayHavePower ? ddc.getVCP(VCP.powerMode) : nil
-            let supportsP = (self.caps?.supports(VCP.powerMode) ?? false) || pReading != nil
 
             // Auto input detection (0xF6). Read it to learn support and, when the
             // panel answers, reconcile it to the user's preference: a manual
@@ -315,26 +312,21 @@ final class DisplayController: ObservableObject {
                 self.supportsMute = supportsM
                 if supportsM { self.isMuted = muted }
                 self.supportsAutoInputDetect = supportsAuto
-                self.supportsPowerControl = supportsP
-                if controllable { self.lastPowerTargetID = chosen.id }
+                self.supportsPowerControl = true
+                self.lastPowerTargetID = chosen.id
                 self.isBusy = false
                 self.lastSyncText = self.stamp(controllable ? "Synced" : "DDC/CI not responding")
 
-                // Reconcile power intent with observed reality. The comparison
-                // is against the off value MacQ wrote, not against powerOn:
-                // the panel's on-state may legitimately read as another of the
-                // advertised values, and "no longer in the state we put it in"
-                // is the honest test. (Refine once the 0xD6 value semantics
-                // are bench-confirmed.) A panel answering while we believe it
-                // off means someone woke it by hand; a controllable bind
-                // mid-wake means the wake succeeded, and stamping here settles
-                // the UI immediately instead of at the verdict deadline.
-                if self.powerState == .offByMacQ, let pReading,
-                   pReading.current != BenQProfile.powerOff {
+                // Reconcile power intent with observed reality. Switching the
+                // monitor off drops it out of the display list entirely, so a
+                // bind that gets this far means the panel is back: either the
+                // user woke it by hand, or the wake we started has landed.
+                // Settling here rather than at the verdict deadline makes the
+                // UI agree with the screen as soon as the screen is right.
+                if self.powerState == .offByMacQ, controllable {
                     self.powerState = .normal
                 }
-                if self.powerState == .waking, controllable,
-                   pReading == nil || pReading?.current != BenQProfile.powerOff {
+                if self.powerState == .waking, controllable {
                     self.powerState = .normal
                     self.lastSyncText = self.stamp("Monitor is awake")
                 }
@@ -426,71 +418,57 @@ final class DisplayController: ObservableObject {
 
     // MARK: - Monitor power
 
-    /// Puts the monitor into standby with a VCP 0xD6 write, leaving the Mac and
-    /// every other display untouched. Verified by read-back: the panel answering
-    /// anything other than "on" counts, and so does the link going silent (an
-    /// off state that drops the DisplayPort link takes DDC with it, and the dark
-    /// panel is the user-visible truth). Only an unchanged "on" read-back is a
-    /// failure, which reverts the state and says so.
+    /// Turns the monitor off by dropping its video signal: the display is
+    /// disabled for this process (see DisplayReplug), the panel stops receiving
+    /// a picture and puts itself into standby. The Mac, the built-in display and
+    /// every other monitor are untouched.
+    ///
+    /// This deliberately does not go through DDC. The MA320UP advertises
+    /// `D6(50 60 90 A0)` but does not implement 0xD6 as MCCS power: the panel
+    /// reports max 160 for it and treats writes as a picture setting, which is
+    /// why an earlier 0xD6 build only changed the image (see
+    /// research/logs/d6-power-experiments.txt). No DDC power control exists on
+    /// this panel, and Display Pilot 2 offers none either.
+    ///
+    /// The disable is scoped to MacQ's lifetime, so quitting or crashing brings
+    /// the monitor back rather than stranding it dark.
     func turnMonitorOff() {
         dispatchPrecondition(condition: .onQueue(.main))
-        guard availability.isAvailable, supportsPowerControl, powerState == .normal else { return }
+        guard supportsPowerControl, powerState == .normal else { return }
+        guard let id = display?.id ?? lastPowerTargetID else { return }
         isBusy = true
-        // Set the intent before the write: the reconfiguration storm an off
-        // transition can fire must find refresh already knowing it is expected,
-        // or the recovery ladder would poll the panel back awake.
+        // Set the intent before the call: disabling a display fires a
+        // reconfiguration storm, and refresh has to already know the monitor
+        // going quiet is expected or the recovery ladder would fight it.
         powerState = .offByMacQ
-        if let id = display?.id { lastPowerTargetID = id }
+        lastPowerTargetID = id
 
-        queue.async { [weak self] in
-            guard let self, let ddc = self.ddc else {
-                self?.publish {
-                    self?.powerState = .normal
-                    self?.isBusy = false
-                }
-                return
-            }
+        let turnedOff = DisplayReplug.setDisplay(id, enabled: false)
+        NSLog("MacQ.power: off via display disable %u ok=%@", id, turnedOff ? "true" : "false")
 
-            var confirmed = false
-            for _ in 0..<2 {
-                ddc.setVCP(VCP.powerMode, value: BenQProfile.powerOff)
-                usleep(1_000_000)
-                guard let r = ddc.getVCP(VCP.powerMode) else {
-                    confirmed = true // link died with the backlight
-                    break
-                }
-                if r.current != BenQProfile.powerOn {
-                    confirmed = true
-                    break
-                }
-            }
-            NSLog("MacQ.power: off write 0x%04X confirmed=%@", BenQProfile.powerOff,
-                  confirmed ? "true" : "false")
-
-            self.publish {
-                self.isBusy = false
-                if confirmed {
-                    self.lastSyncText = self.stamp("Monitor turned off")
-                } else {
-                    self.powerState = .normal
-                    self.lastSyncText = self.stamp("Monitor did not turn off")
-                }
-            }
+        isBusy = false
+        if turnedOff {
+            lastSyncText = stamp("Monitor turned off")
+        } else {
+            powerState = .normal
+            lastSyncText = stamp("Monitor did not turn off")
         }
     }
 
-    /// Wakes the monitor through escalating stages:
+    /// Wakes the monitor in two stages.
     ///
     /// W1 declares user activity (public IOKit), which powers macOS-slept
     /// displays back on and re-drives the video signal; a signal transition is
-    /// what BenQ panels wake on. W2 re-binds the DDC link by the remembered
-    /// display id and writes the 0xD6 "on" value, for off states where the
-    /// panel's DDC stays powered. W3 hands over to refresh() and its 1.5/3/6 s
-    /// rebuild ladder, the proven remedy for a panel that re-enumerates before
-    /// its DDC answers. If the verdict deadline passes without a controllable
-    /// bind, W4 soft-replugs the display (disconnect + reconnect), the software
-    /// equivalent of pulling the cable. A panel that fully cut its ports can
-    /// only be woken by its own button, and the final stamp says so.
+    /// what BenQ panels wake on. W2 re-enables the display link (see
+    /// DisplayReplug), which both undoes MacQ's own off action and, for a panel
+    /// that is still enumerated but asleep, renegotiates the link the way
+    /// re-plugging the cable would. refresh() then runs its 1.5/3/6 s rebuild
+    /// ladder, the proven remedy for a panel that re-enumerates before its DDC
+    /// answers.
+    ///
+    /// There is no DDC stage: this panel has no working power VCP (see
+    /// turnMonitorOff). A monitor that has fully powered down its ports leaves
+    /// nothing for software to address, and the verdict stamp says so honestly.
     func wakeMonitor() {
         dispatchPrecondition(condition: .onQueue(.main))
         guard powerState != .waking else { return }
@@ -506,72 +484,39 @@ final class DisplayController: ObservableObject {
         IOPMAssertionDeclareUserActivity("MacQ wake monitor" as CFString,
                                          kIOPMUserActiveLocal, &assertionID)
 
-        // Captured on the main thread; the queue block below must not read
-        // main-confined state.
-        let targetID = display?.id ?? lastPowerTargetID
-
-        // W2, slightly delayed so W1's link re-drive has begun.
-        queue.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self else { return }
-            // Re-resolve a dead link directly by display id. DDCLink.make walks
-            // the IORegistry only (no NSScreen), so it is safe on this queue.
-            if self.ddc == nil, let id = targetID, let link = DDCLink.make(displayID: id) {
-                self.ddc = DDC(link: link)
-                self.boundDisplayID = id
-            }
-            if let ddc = self.ddc {
-                for _ in 0..<3 {
-                    ddc.setVCP(VCP.powerMode, value: BenQProfile.powerOn)
-                    usleep(500_000)
-                    if let r = ddc.getVCP(VCP.powerMode), r.current == BenQProfile.powerOn {
-                        break
-                    }
-                }
-            }
-            // W3: the full refresh re-detects, re-binds and runs the ladder.
-            self.publish {
-                guard generation == self.wakeGeneration else { return }
-                self.refresh()
-            }
-        }
-
-        // 13 s covers W2's writes plus the whole 1.5/3/6 s ladder.
-        scheduleWakeVerdict(generation: generation, deadline: 13.0, isFinal: false)
+        performReplugWake(generation: generation)
     }
 
     /// Checks how a wake attempt ended once its stages have had time to run.
-    /// A verdict that finds the panel still unreachable escalates to the replug
-    /// (W4) once; the second verdict is final and reports honestly.
-    private func scheduleWakeVerdict(generation: Int, deadline: TimeInterval, isFinal: Bool) {
+    private func scheduleWakeVerdict(generation: Int, deadline: TimeInterval) {
         DispatchQueue.main.asyncAfter(deadline: .now() + deadline) { [weak self] in
             guard let self, generation == self.wakeGeneration else { return }
             // An earlier refresh already settled this wake (or the user acted);
             // nothing left to judge.
             guard self.powerState == .waking else { return }
 
+            self.powerState = .normal
+            self.isBusy = false
             if self.availability.isAvailable {
-                self.powerState = .normal
                 self.lastSyncText = self.stamp("Monitor is awake")
-            } else if !isFinal {
-                self.performReplugWake(generation: generation)
             } else {
-                self.powerState = .normal
                 self.lastSyncText = self.stamp("Could not wake the monitor. Try its power button.")
             }
         }
     }
 
-    /// W4: soft-replug via the private CGSConfigureDisplayEnabled call (see
-    /// DisplayReplug). Disconnecting and reconnecting renegotiates the link the
-    /// way unplugging the cable would, which produces the signal transition a
-    /// BenQ panel wakes on even when its DDC is unreachable. Last resort only:
-    /// a replug can occasionally leave the mode list degraded until a physical
-    /// re-plug, so the DDC path always gets its chance first.
+    /// W2: re-drive the display link through the private CGSConfigureDisplayEnabled
+    /// call (see DisplayReplug). A display that is still online gets a full
+    /// disconnect/reconnect, the software equivalent of pulling the cable, which
+    /// produces the signal transition a sleeping BenQ panel wakes on. A display
+    /// that has already dropped out of the list only needs the enable half,
+    /// which is the exact undo of MacQ's own off action.
     private func performReplugWake(generation: Int) {
         dispatchPrecondition(condition: .onQueue(.main))
         guard generation == wakeGeneration, powerState == .waking else { return }
         guard let id = display?.id ?? lastPowerTargetID else {
             powerState = .normal
+            isBusy = false
             lastSyncText = stamp("Could not wake the monitor. Try its power button.")
             return
         }
@@ -579,29 +524,29 @@ final class DisplayController: ObservableObject {
         let isOnline = CGDisplayIsOnline(id) != 0
         NSLog("MacQ.power: replug wake, display %u online=%@", id, isOnline ? "true" : "false")
 
-        if isOnline {
-            let disabled = DisplayReplug.setDisplay(id, enabled: false)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                guard let self else { return }
-                guard generation == self.wakeGeneration, self.powerState == .waking else {
-                    // The wake was superseded mid-replug; never leave a display
-                    // disabled behind our own back.
-                    if disabled { DisplayReplug.restorePermanentConfiguration() }
-                    return
-                }
-                let enabled = DisplayReplug.setDisplay(id, enabled: true)
-                if disabled && !enabled {
-                    DisplayReplug.restorePermanentConfiguration()
-                }
-                self.refresh()
-                self.scheduleWakeVerdict(generation: generation, deadline: 10.0, isFinal: true)
-            }
-        } else {
-            // Fully de-enumerated: there is nothing to disable. The enable call
-            // revives a soft-disabled display and fails cleanly otherwise.
+        guard isOnline else {
+            // Off, or de-enumerated: there is nothing to disconnect first.
             _ = DisplayReplug.setDisplay(id, enabled: true)
             refresh()
-            scheduleWakeVerdict(generation: generation, deadline: 10.0, isFinal: true)
+            scheduleWakeVerdict(generation: generation, deadline: 12.0)
+            return
+        }
+
+        let disabled = DisplayReplug.setDisplay(id, enabled: false)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self else { return }
+            guard generation == self.wakeGeneration, self.powerState == .waking else {
+                // The wake was superseded mid-replug; never leave a display
+                // disabled behind our own back.
+                if disabled { DisplayReplug.restorePermanentConfiguration() }
+                return
+            }
+            let enabled = DisplayReplug.setDisplay(id, enabled: true)
+            if disabled && !enabled {
+                DisplayReplug.restorePermanentConfiguration()
+            }
+            self.refresh()
+            self.scheduleWakeVerdict(generation: generation, deadline: 12.0)
         }
     }
 

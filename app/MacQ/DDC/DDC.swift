@@ -19,10 +19,11 @@ enum VCP {
     static let inputSource: UInt8 = 0x60
     static let audioVolume: UInt8 = 0x62
     static let audioMute: UInt8 = 0x8D
-    /// Power mode. The MA320UP advertises BenQ-remapped values
-    /// `D6(50 60 90 A0)`, not the MCCS-standard 0x01...0x05 DPMS set. The value
-    /// constants live in BenQProfile next to the other panel truth.
-    static let powerMode: UInt8 = 0xD6
+    // 0xD6 is deliberately absent. It is the MCCS power code, and the MA320UP
+    // advertises `D6(50 60 90 A0)`, but the panel does not implement it as
+    // power: it answers `current=96 max=160` (max 5 would be a real DPMS
+    // control) and writes only move a picture setting. See BenQProfile and
+    // research/logs/d6-power-experiments.txt before adding it back.
     static let mccsVersion: UInt8 = 0xDF
     /// BenQ auto input detection (F6(00 01)): 0x00 = off, 0x01 = on. Disabling it
     /// before a manual switch stops the panel from racing/overriding the choice.

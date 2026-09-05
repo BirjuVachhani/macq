@@ -170,10 +170,11 @@ struct MenuContent: View {
                 MenuActionRow(title: "Turn monitor off", systemImage: "moon.fill") {
                     controller.turnMonitorOff()
                 }
-                .disabled(!controller.availability.isAvailable
-                          || !controller.supportsPowerControl
-                          || controller.powerState != .normal
-                          || controller.isBusy)
+                // Not gated on availability: turning the monitor off drops its
+                // video signal rather than talking DDC, so it still works on a
+                // panel that has stopped answering VCP reads.
+                .disabled(!controller.supportsPowerControl
+                          || controller.powerState != .normal)
                 // Deliberately gated only on a wake already in flight: a
                 // sleeping panel reads as unavailable and cannot answer a
                 // capability probe, and the recovery ladder flips isBusy while
