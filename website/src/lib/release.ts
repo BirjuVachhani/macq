@@ -25,7 +25,6 @@ export interface Release {
 /** Shape of the one endpoint we read, narrowed to the fields we use. */
 interface LatestReleaseResponse {
   tag_name?: string;
-  assets?: Array<{ name?: string; browser_download_url?: string }>;
 }
 
 const ENDPOINT = 'https://api.github.com/repos/BirjuVachhani/macq/releases/latest';
@@ -64,17 +63,11 @@ async function fetchLatest(): Promise<Release> {
   const version = (data.tag_name ?? '').replace(/^v/, '').trim();
   if (!version) throw new Error('the latest release has no tag_name');
 
-  // The release carries a `.dmg.sha256` checksum next to the disk image, and
-  // that does not end in `.dmg`, so this picks the installer either way.
-  const asset = data.assets?.find((candidate) => candidate.name?.endsWith('.dmg'));
-
   return {
     version,
-    // Falling back to the conventional name covers a release published without
-    // its asset attached yet, which is a real state during a release run.
-    download:
-      asset?.browser_download_url ??
-      `${site.repo}/releases/download/${version}/MacQ-${version}.dmg`,
+    // GitHub is the source of the latest version number only. Release artifacts
+    // are published to Cloudflare R2 by `make release`.
+    download: `${site.artifacts}/MacQ-${version}.dmg`,
     source: 'github',
   };
 }

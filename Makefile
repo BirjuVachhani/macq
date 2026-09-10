@@ -1,12 +1,19 @@
 # MacQ release pipeline
 #
+#   make dmg            build a release-ready .dmg: build, sign, notarize the
+#                       app, package it, notarize the .dmg and verify the result
+#   make release        make dmg, generate the Sparkle appcast, and publish
+#                       both to the Cloudflare R2 bucket
+#
+# The individual steps, if you need to run one on its own:
+#
 #   make build          compile a universal Release .app (unsigned)
 #   make sign           codesign it with Developer ID + hardened runtime
-#   make notarize       submit to Apple, wait for the ticket, staple it
-#   make dmg            clean, build, then wrap the app in a distributable .dmg
+#   make notarize       submit the .app to Apple, wait for the ticket, staple it
 #   make dmg-package    wrap the app already in artifacts/, without rebuilding
 #   make notarize-dmg   notarize and staple the .dmg itself
-#   make release        all of the above, in order
+#   make appcast        sign the .dmg and write artifacts/appcast.xml
+#   make publish        upload an already-built release .dmg and appcast to R2
 #
 # Signing material and credentials live in secrets/ and are never committed.
 # Copy secrets/config.mk.example to secrets/config.mk and fill it in, then run
@@ -49,10 +56,18 @@ BUILD_NUMBER := 1
 endif
 
 APP        := $(ARTIFACTS_DIR)/$(APP_NAME).app
-DMG        := $(ARTIFACTS_DIR)/$(APP_NAME)-$(VERSION).dmg
+DMG_NAME   := $(APP_NAME)-$(VERSION).dmg
+DMG        := $(ARTIFACTS_DIR)/$(DMG_NAME)
 ZIP        := $(ARTIFACTS_DIR)/$(APP_NAME)-$(VERSION).zip
 NOTARY_ZIP := $(BUILD_DIR)/$(APP_NAME)-notarize.zip
 VOLNAME    := $(APP_NAME) $(VERSION)
+
+INFO_PLIST   := app/$(APP_NAME)/Info.plist
+CHANGELOG    := CHANGELOG.md
+APPCAST_NAME := appcast.xml
+APPCAST      := $(ARTIFACTS_DIR)/$(APPCAST_NAME)
+APPCAST_TOOL        := scripts/appcast.py
+SPARKLE_KEY_CHECKER := scripts/sparkle_public_key.swift
 
 # auto | create-dmg | hdiutil
 DMG_TOOL ?= auto
@@ -86,6 +101,71 @@ NOTARY_AUTH :=
 NOTARY_AUTH_DESC := (none configured)
 endif
 
+# ------------------------------------------------------------ publishing ---
+
+# Cloudflare R2, reached over its S3-compatible API. R2_FOLDER is optional; an
+# empty value puts the objects at the root of the bucket.
+R2_ENDPOINT := https://$(strip $(R2_ACCOUNT_ID)).r2.cloudflarestorage.com
+R2_FOLDER_CLEAN := $(patsubst /%,%,$(patsubst %/,%,$(strip $(R2_FOLDER))))
+R2_PREFIX   := $(if $(R2_FOLDER_CLEAN),$(R2_FOLDER_CLEAN)/,)
+
+# config.mk.example ships these as "change-me", so a half-filled config counts
+# as unconfigured and fails before the build rather than as a 403 from
+# Cloudflare after it. This collects the *names* of the unusable settings and
+# never their values, so no credential can reach a terminal or a process list.
+r2_unset   = $(if $(filter-out change-me,$(strip $($(1)))),,$(1))
+R2_MISSING := $(strip $(call r2_unset,R2_ACCOUNT_ID) $(call r2_unset,R2_ACCESS_KEY_ID) \
+                      $(call r2_unset,R2_SECRET_ACCESS_KEY) $(call r2_unset,R2_BUCKET))
+
+# The upload reads the key and the secret out of the environment rather than
+# out of curl's argument list, where `ps` would show them to anyone on the
+# machine. They are exported only for r2-put, rather than inherited by every
+# build and notarization process this Makefile starts.
+
+# --------------------------------------------------------------- sparkle ---
+
+# In-app updates. The app polls SUFeedURL from Info.plist and installs nothing
+# that is not signed by the EdDSA key whose public half sits next to it in
+# SUPublicEDKey; the private half lives in the login keychain, put there by
+# Sparkle's generate_keys, and is what sign_update reaches for.
+#
+# Both the appcast and the DMG are served from the same directory as the feed,
+# so the public URLs are derived from SUFeedURL rather than configured twice.
+# Overriding PUBLIC_BASE_URL is for testing against a scratch bucket.
+FEED_URL        := $(shell plutil -extract SUFeedURL raw -o - -- $(INFO_PLIST) 2>/dev/null)
+PUBLIC_BASE_URL ?= $(patsubst %/,%,$(dir $(FEED_URL)))
+
+# Sparkle offers the release with the highest sparkle:version, which is
+# CFBundleVersion, so this has to move between releases even when only the
+# marketing version changes. `./set_version.sh <version> ++` does both.
+MIN_SYSTEM_VERSION ?= $(shell sed -n 's/^[[:space:]]*MACOSX_DEPLOYMENT_TARGET = \(.*\);/\1/p' $(XCODE_PROJECT)/project.pbxproj | head -1 | tr -d '"')
+
+# sign_update ships in Sparkle's release tarball rather than in the Swift
+# package, so `make sparkle-tools` fetches it on demand. Pinned to the version
+# the app links against, and cached in build/ (which `make clean` empties, at
+# the cost of one download).
+SPARKLE_VERSION   ?= 2.9.6
+SPARKLE_TOOLS_DIR := $(BUILD_DIR)/sparkle-tools
+SIGN_UPDATE       ?= $(SPARKLE_TOOLS_DIR)/bin/sign_update
+GENERATE_KEYS     ?= $(SPARKLE_TOOLS_DIR)/bin/generate_keys
+
+# Which private key sign_update reaches for. The keychain stores keys under a
+# named account, and left to itself sign_update takes the default one - which on
+# a Mac that has ever shipped another Sparkle app is somebody else's key. Signing
+# with it produces a DMG that every installed copy of MacQ refuses to install,
+# and nothing says so until a user tries to update, so the account is named here
+# rather than defaulted.
+#
+# The exported copy in secrets/ takes precedence when it exists, so a release is
+# reproducible on a machine whose keychain is empty and CI can write the key to
+# that path from a repository secret. Either way `make doctor` checks the key in
+# use against the SUPublicEDKey the app actually trusts.
+SPARKLE_ACCOUNT  ?= macq
+SPARKLE_KEY_FILE ?= $(SECRETS_DIR)/sparkle_ed25519_private.key
+SPARKLE_KEY_ARGS := $(if $(wildcard $(SPARKLE_KEY_FILE)),--ed-key-file "$(SPARKLE_KEY_FILE)",--account "$(SPARKLE_ACCOUNT)")
+
+# ------------------------------------------------------------ guard rails ---
+
 define require_var
 @if [ -z "$(strip $($(1)))" ]; then \
 	echo "error: $(1) is not set."; \
@@ -106,6 +186,16 @@ endef
 define require_app
 @if [ ! -d "$(APP)" ]; then \
 	echo "error: $(APP) not found - run 'make build' first."; \
+	exit 1; \
+fi
+endef
+
+define require_r2
+@if [ -n "$(R2_MISSING)" ]; then \
+	echo "error: Cloudflare R2 upload is not configured."; \
+	echo "       Unset or still 'change-me': $(R2_MISSING)"; \
+	echo "       Set them in $(SECRETS_DIR)/config.mk (see $(SECRETS_DIR)/config.mk.example),"; \
+	echo "       or run 'make dmg' to build the DMG without publishing it."; \
 	exit 1; \
 fi
 endef
@@ -160,6 +250,16 @@ build: check-sdk ## Compile a universal Release .app (unsigned) into artifacts/
 # ------------------------------------------------------------------ sign ---
 
 .PHONY: sign
+# Signed in three passes, innermost first, because codesign seals a bundle over
+# its contents and will not re-seal one whose nested code changed afterwards.
+#
+# The middle pass is for helper executables that sit loose inside a framework
+# rather than in a bundle of their own: Sparkle ships Autoupdate exactly that
+# way. It has no extension for the bundle pass to match on, and it arrives from
+# the Swift package ad-hoc signed rather than Developer ID signed, so without
+# that pass the app notarizes as "not signed with a valid Developer ID". Nested
+# bundles are matched on the path *below* Frameworks/, since matching the whole
+# path would see the enclosing MacQ.app and skip everything.
 sign: ## Codesign the .app with Developer ID (hardened runtime + timestamp)
 	$(call require_var,SIGN_IDENTITY)
 	$(call require_app)
@@ -175,6 +275,14 @@ sign: ## Codesign the .app with Developer ID (hardened runtime + timestamp)
 	@set -eo pipefail; \
 	 find "$(APP)/Contents" -type f \( -name '*.dylib' -o -name '*.so' \) -print0 | \
 	 while IFS= read -r -d '' f; do echo "    nested: $$f"; codesign $(CODESIGN_FLAGS) "$$f"; done
+	@set -eo pipefail; \
+	 root="$(APP)/Contents/Frameworks"; \
+	 find "$$root" -type f -perm -u+x ! -name '*.dylib' ! -name '*.so' -print0 2>/dev/null | \
+	 while IFS= read -r -d '' f; do \
+		case "$${f#$$root/}" in *.app/*|*.xpc/*|*.appex/*|*.bundle/*) continue;; esac; \
+		case "$$(file -b "$$f")" in *Mach-O*) ;; *) continue;; esac; \
+		echo "    nested: $$f"; codesign $(CODESIGN_FLAGS) "$$f"; \
+	 done
 	@set -eo pipefail; \
 	 find "$(APP)/Contents" -depth \( -name '*.framework' -o -name '*.xpc' -o -name '*.app' \
 		-o -name '*.appex' -o -name '*.bundle' \) -print0 | \
@@ -230,15 +338,33 @@ notary-submit:
 
 # ------------------------------------------------------------------- dmg ---
 
-# `make dmg` is the one-shot local command: clear out previous output, compile a
-# fresh app, and package it. Packaging alone is `dmg-package`, so `release` can
-# wrap the app it has just signed and notarized instead of discarding it and
-# rebuilding an unsigned one.
+# `make dmg` produces a DMG that is ready to ship: the app is signed, notarized
+# and stapled, the DMG wrapping it is signed and notarized in turn, and the
+# whole thing is verified against Gatekeeper before the target succeeds.
+#
+# Packaging on its own is `dmg-package`, which wraps whatever app is already in
+# artifacts/ and only warns when that app is unsigned - use `make build` then
+# `make dmg-package` for a throwaway DMG to test locally.
 .PHONY: dmg
-dmg: ## Clean, build, then package the app into a distributable .dmg
-	@$(MAKE) --no-print-directory clean
+dmg: ## Build, sign, notarize and package a release-ready .dmg
+	@$(MAKE) --no-print-directory release-preflight
+	@$(MAKE) --no-print-directory clean-artifacts
 	@$(MAKE) --no-print-directory build
+	@$(MAKE) --no-print-directory sign
+	@$(MAKE) --no-print-directory notarize
 	@$(MAKE) --no-print-directory dmg-package
+	@$(MAKE) --no-print-directory notarize-dmg
+	@$(MAKE) --no-print-directory verify
+	@echo
+	@echo "==> Release ready: $(DMG)"
+
+# Internal: fail on missing credentials before the build, not after it. Without
+# this, an unset SIGN_IDENTITY or notary credential surfaces at `sign`, several
+# minutes into a compile whose output then has to be thrown away.
+.PHONY: release-preflight
+release-preflight: check-sdk
+	$(call require_var,SIGN_IDENTITY)
+	$(call require_notary)
 
 .PHONY: dmg-package
 dmg-package: ## Package the app already in artifacts/ into a .dmg, without rebuilding
@@ -292,19 +418,187 @@ zip: ## Package the signed, stapled .app as a .zip for direct download
 	@ditto -c -k --keepParent "$(APP)" "$(ZIP)"
 	@echo "==> $(ZIP)"
 
+# --------------------------------------------------------------- appcast ---
+
+.PHONY: sparkle-tools
+sparkle-tools: ## Fetch Sparkle's CLI tools (sign_update) into build/
+	@set -eo pipefail; \
+	 if [ -x "$(SIGN_UPDATE)" ]; then exit 0; fi; \
+	 url="https://github.com/sparkle-project/Sparkle/releases/download/$(SPARKLE_VERSION)/Sparkle-$(SPARKLE_VERSION).tar.xz"; \
+	 echo "==> Fetching Sparkle $(SPARKLE_VERSION) tools"; \
+	 tmp=$$(mktemp -d); \
+	 trap 'rm -rf "$$tmp"' EXIT; \
+	 if ! curl --fail --silent --show-error --location "$$url" -o "$$tmp/sparkle.tar.xz"; then \
+		echo "error: could not download $$url"; exit 1; \
+	 fi; \
+	 mkdir -p "$(SPARKLE_TOOLS_DIR)"; \
+	 tar -xJf "$$tmp/sparkle.tar.xz" -C "$(SPARKLE_TOOLS_DIR)" ./bin; \
+	 if [ ! -x "$(SIGN_UPDATE)" ]; then \
+		echo "error: $(SIGN_UPDATE) is missing from the Sparkle tarball."; exit 1; \
+	 fi; \
+	 echo "    $(SIGN_UPDATE)"
+
+# Writes artifacts/appcast.xml: the release notes for $(VERSION) out of
+# CHANGELOG.md, plus the DMG's length and EdDSA signature. The feed currently
+# published is merged in first, so earlier releases stay in it. Only a real 404
+# starts a new feed; a network or server failure aborts rather than overwriting
+# a live feed without its history or build-number guard.
+.PHONY: appcast
+appcast: sparkle-tools ## Sign the .dmg and write artifacts/appcast.xml
+	@if [ ! -f "$(DMG)" ]; then \
+		echo "error: $(DMG) not found - run 'make dmg' first."; exit 1; \
+	fi
+	@if [ ! -f "$(CHANGELOG)" ]; then \
+		echo "error: $(CHANGELOG) not found; the appcast takes its release notes from it."; exit 1; \
+	fi
+	@if [ -z "$(strip $(FEED_URL))" ]; then \
+		echo "error: no SUFeedURL in $(INFO_PLIST), so the download URL cannot be derived."; exit 1; \
+	fi
+	@echo "==> Building the appcast for $(VERSION) ($(BUILD_NUMBER))"
+	@set -eo pipefail; \
+	 mkdir -p "$(BUILD_DIR)"; \
+	 signed=$$("$(SIGN_UPDATE)" $(SPARKLE_KEY_ARGS) "$(DMG)"); \
+	 signature=$$(printf '%s' "$$signed" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p'); \
+	 length=$$(printf '%s' "$$signed" | sed -n 's/.*length="\([^"]*\)".*/\1/p'); \
+	 if [ -z "$$signature" ] || [ -z "$$length" ]; then \
+		echo "error: sign_update did not return a signature:"; echo "    $$signed"; \
+		echo "       Expected $(SPARKLE_KEY_FILE), or a key in the keychain"; \
+		echo "       under the '$(SPARKLE_ACCOUNT)' account. See 'make doctor'."; \
+		exit 1; \
+	 fi; \
+	 previous="$(BUILD_DIR)/appcast-published.xml"; \
+	 rm -f "$$previous"; merge=""; \
+	 code=$$(curl --silent --show-error --location --max-time 30 \
+		--header 'Cache-Control: no-cache' \
+		--output "$$previous" --write-out '%{http_code}' \
+		"$(PUBLIC_BASE_URL)/$(APPCAST_NAME)?release-check=$$(date +%s)") || code=000; \
+	 case "$$code" in \
+		200) merge="--existing $$previous"; \
+			echo "    merging into the feed already published" ;; \
+		404) rm -f "$$previous"; \
+			echo "    no feed published yet, starting one" ;; \
+		*) rm -f "$$previous"; \
+			echo "error: could not read the published appcast (HTTP $$code)."; \
+			echo "       Refusing to replace it without its release history."; \
+			exit 1 ;; \
+	 esac; \
+	 python3 "$(APPCAST_TOOL)" \
+		--version "$(VERSION)" \
+		--build "$(BUILD_NUMBER)" \
+		--url "$(PUBLIC_BASE_URL)/$(DMG_NAME)" \
+		--length "$$length" \
+		--signature "$$signature" \
+		--changelog "$(CHANGELOG)" \
+		--feed-url "$(FEED_URL)" \
+		--min-system-version "$(MIN_SYSTEM_VERSION)" \
+		--title "$(APP_NAME)" \
+		--output "$(APPCAST)" \
+		$$merge
+
+# --------------------------------------------------------------- publish ---
+
+# Uploads over R2's S3-compatible API, with curl signing the request itself
+# (SigV4), so publishing needs no aws CLI, no wrangler and no rclone - just the
+# curl that ships with macOS.
+#
+# The checksum sidecar is written with a bare filename inside it, so that
+# `shasum -c MacQ-x.y.z.dmg.sha256` works next to the downloaded DMG. This is
+# the same pair the release workflow attaches to a GitHub release.
+#
+# The appcast goes up last, on purpose. It is the file the app polls, so
+# publishing it before the DMG it points at would offer every running copy of
+# MacQ an update that 404s for as long as the upload takes.
+.PHONY: publish
+publish: ## Upload the release .dmg, its checksum and the appcast to R2
+	$(call require_r2)
+	@if [ ! -f "$(DMG)" ]; then \
+		echo "error: $(DMG) not found - run 'make dmg' first."; exit 1; \
+	fi
+	@if ! xcrun stapler validate "$(DMG)" >/dev/null 2>&1; then \
+		echo "error: $(DMG) carries no stapled notarization ticket, so it is not"; \
+		echo "       fit to publish - run 'make dmg' to build a release DMG."; \
+		exit 1; \
+	fi
+	@$(MAKE) --no-print-directory appcast
+	@echo "==> Publishing to r2://$(R2_BUCKET)/$(R2_PREFIX)"
+	@( cd "$(ARTIFACTS_DIR)" && shasum -a 256 "$(DMG_NAME)" > "$(DMG_NAME).sha256" )
+	@$(MAKE) --no-print-directory r2-put SRC="$(DMG)" \
+		KEY="$(R2_PREFIX)$(DMG_NAME)" TYPE=application/x-apple-diskimage
+	@$(MAKE) --no-print-directory r2-put SRC="$(DMG).sha256" \
+		KEY="$(R2_PREFIX)$(DMG_NAME).sha256" TYPE=text/plain
+	@$(MAKE) --no-print-directory r2-put SRC="$(APPCAST)" \
+		KEY="$(R2_PREFIX)$(APPCAST_NAME)" TYPE=application/xml
+	@echo "==> Published $(DMG_NAME) and $(APPCAST_NAME) to r2://$(R2_BUCKET)/$(R2_PREFIX)"
+	@echo "    the update feed is now $(FEED_URL)"
+
+# Internal: PUT one file into the bucket. SRC is the local path, KEY the object
+# key within the bucket, TYPE the Content-Type to store it under.
+.PHONY: r2-put
+r2-put: export R2_ACCESS_KEY_ID := $(R2_ACCESS_KEY_ID)
+r2-put: export R2_SECRET_ACCESS_KEY := $(R2_SECRET_ACCESS_KEY)
+r2-put:
+	@echo "    $(notdir $(SRC)) ($$(du -h "$(SRC)" | cut -f1 | tr -d ' ')) -> $(KEY)"
+	@set -eo pipefail; \
+	 mkdir -p "$(BUILD_DIR)"; \
+	 body="$(BUILD_DIR)/r2-response.xml"; \
+	 rm -f "$$body"; \
+	 if ! printf 'user = %s:%s\n' "$$R2_ACCESS_KEY_ID" "$$R2_SECRET_ACCESS_KEY" | \
+		curl --config - \
+			--aws-sigv4 'aws:amz:auto:s3' \
+			--upload-file "$(SRC)" \
+			--header 'Content-Type: $(TYPE)' \
+			--retry 3 --retry-connrefused \
+			--silent --show-error --fail-with-body \
+			--output "$$body" \
+			"$(R2_ENDPOINT)/$(R2_BUCKET)/$(KEY)"; then \
+		echo "error: uploading $(KEY) to R2 failed."; \
+		if [ -s "$$body" ]; then sed 's/^/    /' "$$body"; echo; fi; \
+		exit 1; \
+	 fi
+
+# Internal: verify the separate credentials needed to announce the DMG through
+# Sparkle. Kept out of release-preflight because `make dmg` deliberately stops
+# before publishing and must not need an R2 token or an update-signing key.
+.PHONY: publish-preflight
+publish-preflight: sparkle-tools
+	$(call require_r2)
+	@set -eo pipefail; \
+	 probe=$$(mktemp); \
+	 trap 'rm -f "$$probe"' EXIT; \
+	 printf 'MacQ Sparkle key preflight' > "$$probe"; \
+	 if ! signed=$$("$(SIGN_UPDATE)" $(SPARKLE_KEY_ARGS) "$$probe" 2>&1); then \
+		echo "error: the Sparkle EdDSA private key is unavailable."; \
+		echo "       Expected $(SPARKLE_KEY_FILE), or keychain account '$(SPARKLE_ACCOUNT)'."; \
+		exit 1; \
+	 fi; \
+	 case "$$signed" in *'sparkle:edSignature="'*) ;; \
+		*) echo "error: sign_update did not return a Sparkle signature."; exit 1;; \
+	 esac; \
+	 trusted=$$(plutil -extract SUPublicEDKey raw -o - -- "$(INFO_PLIST)" 2>/dev/null); \
+	 if [ -n "$(findstring --ed-key-file,$(SPARKLE_KEY_ARGS))" ]; then \
+		actual=$$("$(SPARKLE_KEY_CHECKER)" "$(SPARKLE_KEY_FILE)"); \
+	 else \
+		actual=$$("$(GENERATE_KEYS)" -p --account "$(SPARKLE_ACCOUNT)" 2>/dev/null); \
+	 fi; \
+	 if [ -z "$$trusted" ] || [ "$$actual" != "$$trusted" ]; then \
+		echo "error: the Sparkle signing key does not match SUPublicEDKey in $(INFO_PLIST)."; \
+		echo "       Updates signed with it would be rejected by every installed copy."; \
+		exit 1; \
+	 fi
+
 # --------------------------------------------------------------- release ---
 
+# The full ship: everything `make dmg` does, then the appcast and the upload.
+# The R2 settings and the changelog entry are checked first, so a missing
+# credential or a release note nobody wrote costs a second rather than a build
+# and two notarization round trips.
 .PHONY: release
-release: ## Full pipeline: build, sign, notarize, dmg, notarize dmg, verify
-	@$(MAKE) --no-print-directory clean-artifacts
-	@$(MAKE) --no-print-directory build
-	@$(MAKE) --no-print-directory sign
-	@$(MAKE) --no-print-directory notarize
-	@$(MAKE) --no-print-directory dmg-package
-	@$(MAKE) --no-print-directory notarize-dmg
-	@$(MAKE) --no-print-directory verify
-	@echo
-	@echo "==> Release ready: $(DMG)"
+release: ## Build a release-ready .dmg, then publish it and the appcast to R2
+	@python3 "$(APPCAST_TOOL)" --version "$(VERSION)" \
+		--changelog "$(CHANGELOG)" --check-changelog
+	@$(MAKE) --no-print-directory publish-preflight
+	@$(MAKE) --no-print-directory dmg
+	@$(MAKE) --no-print-directory publish
 
 .PHONY: verify
 verify: ## Check signature, notarization ticket and Gatekeeper acceptance
@@ -357,7 +651,7 @@ doctor: ## Check toolchain and secrets configuration
 	@echo "MacQ $(VERSION) ($(BUILD_NUMBER))"
 	@echo
 	@echo "Tools"
-	@for t in xcodebuild codesign xcrun ditto hdiutil security plutil; do \
+	@for t in xcodebuild codesign xcrun ditto hdiutil security plutil shasum; do \
 		if command -v $$t >/dev/null 2>&1; then echo "  ok       $$t"; else echo "  MISSING  $$t"; fi; \
 	 done
 	@for t in notarytool stapler; do \
@@ -375,6 +669,11 @@ doctor: ## Check toolchain and secrets configuration
 		echo "  ok       create-dmg (styled DMG)"; \
 	 else \
 		echo "  -        create-dmg not installed, falling back to hdiutil (brew install create-dmg)"; \
+	 fi
+	@if curl --help all 2>/dev/null | grep -q -- '--aws-sigv4'; then \
+		echo "  ok       curl $$(curl --version | head -1 | cut -d' ' -f2) with --aws-sigv4 (R2 upload)"; \
+	 else \
+		echo "  MISSING  curl with --aws-sigv4 (needs 7.75+; 'make publish' cannot sign its uploads)"; \
 	 fi
 	@echo
 	@echo "Configuration"
@@ -408,6 +707,71 @@ doctor: ## Check toolchain and secrets configuration
 	 else \
 		echo "  -        no provisioning profile (fine: Developer ID apps need one only for"; \
 		echo "           entitlements like iCloud, push or app groups)"; \
+	 fi
+	@echo
+	@echo "Publishing (Cloudflare R2)"
+	@if [ -n "$(R2_MISSING)" ]; then \
+		echo "  MISSING  $(R2_MISSING)"; \
+		echo "           Only 'make release' and 'make publish' need these; 'make dmg' does not."; \
+	 else \
+		echo "  ok       destination: r2://$(R2_BUCKET)/$(R2_PREFIX)"; \
+	 fi
+	@echo
+	@echo "In-app updates (Sparkle)"
+	@if [ -z "$(strip $(FEED_URL))" ]; then \
+		echo "  MISSING  no SUFeedURL in $(INFO_PLIST)"; \
+	 else \
+		echo "  ok       feed: $(FEED_URL)"; \
+		echo "  ok       uploads land at: $(PUBLIC_BASE_URL)/"; \
+	 fi
+	@if [ -x "$(SIGN_UPDATE)" ]; then \
+		echo "  ok       sign_update: $(SIGN_UPDATE)"; \
+	 else \
+		echo "  -        sign_update not fetched yet ('make sparkle-tools', or any 'make appcast')"; \
+	 fi
+	@if [ -x "$(SIGN_UPDATE)" ]; then \
+		probe=$$(mktemp); printf 'probe' > "$$probe"; \
+		if "$(SIGN_UPDATE)" $(SPARKLE_KEY_ARGS) "$$probe" >/dev/null 2>&1; then \
+			if [ -n "$(findstring --ed-key-file,$(SPARKLE_KEY_ARGS))" ]; then \
+				echo "  ok       signing key: $(SPARKLE_KEY_FILE)"; \
+			else \
+				echo "  ok       signing key: keychain account '$(SPARKLE_ACCOUNT)'"; \
+			fi; \
+		else \
+			echo "  MISSING  no Sparkle EdDSA private key; 'make appcast' cannot sign the DMG"; \
+			echo "           looked for $(SPARKLE_KEY_FILE) and keychain account '$(SPARKLE_ACCOUNT)'"; \
+			echo "           (without it no build can ever update an installed copy)"; \
+		fi; \
+		rm -f "$$probe"; \
+	 fi
+	@trusted=$$(plutil -extract SUPublicEDKey raw -o - -- "$(INFO_PLIST)" 2>/dev/null); \
+	 if [ -z "$$trusted" ]; then \
+		echo "  MISSING  no SUPublicEDKey in $(INFO_PLIST); the app trusts no update key"; \
+	 elif [ ! -x "$(GENERATE_KEYS)" ]; then \
+		echo "  -        public key: $$trusted (run 'make sparkle-tools' to check the pair)"; \
+	 elif [ -n "$(findstring --ed-key-file,$(SPARKLE_KEY_ARGS))" ]; then \
+		if ! actual=$$("$(SPARKLE_KEY_CHECKER)" "$(SPARKLE_KEY_FILE)" 2>/dev/null); then \
+			echo "  MISSING  could not derive a public key from $(SPARKLE_KEY_FILE)"; \
+		elif [ "$$actual" = "$$trusted" ]; then \
+			echo "  ok       signing key matches SUPublicEDKey in $(INFO_PLIST)"; \
+		else \
+			echo "  MISMATCH $(SPARKLE_KEY_FILE) does not match SUPublicEDKey"; \
+		fi; \
+	 elif ! actual=$$("$(GENERATE_KEYS)" -p --account "$(SPARKLE_ACCOUNT)" 2>/dev/null); then \
+		echo "  MISSING  no '$(SPARKLE_ACCOUNT)' key in this keychain to compare"; \
+	 elif [ "$$actual" = "$$trusted" ]; then \
+		echo "  ok       signing key matches SUPublicEDKey in $(INFO_PLIST)"; \
+	 else \
+		echo "  MISMATCH the '$(SPARKLE_ACCOUNT)' key signs as $$actual"; \
+		echo "           but the app only trusts   $$trusted"; \
+		echo "           Updates signed with it would be rejected by every installed copy."; \
+	 fi
+	@if [ ! -f "$(CHANGELOG)" ]; then \
+		echo "  MISSING  $(CHANGELOG), which the appcast takes its release notes from"; \
+	 elif grep -qE '^##[[:space:]]+\[?v?$(VERSION)\]?([[:space:]]|$$)' "$(CHANGELOG)"; then \
+		echo "  ok       $(CHANGELOG) has a section for $(VERSION)"; \
+	 else \
+		echo "  MISSING  $(CHANGELOG) has no '## [$(VERSION)]' section for this release"; \
 	 fi
 
 # ----------------------------------------------------------------- misc ---

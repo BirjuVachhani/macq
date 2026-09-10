@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5A9B1E000000000000000002 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 5A9B1E000000000000000004 /* Sparkle */; };
+		5A9B1E000000000000000006 /* UpdaterController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A9B1E000000000000000005 /* UpdaterController.swift */; };
 		124AC851E16E586BAD4DCB17 /* DisplayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB2EA7AC5E021DF124C46A90 /* DisplayController.swift */; };
 		154D314CF3A1EC8BE5608D6B /* Capabilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = B989B570CF6D93895F1E9340 /* Capabilities.swift */; };
 		1A8275332E8DCC62E5CEA405 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93DDF6E9AB9BB2CED8EF04D9 /* Models.swift */; };
@@ -51,6 +53,7 @@
 		A5583E7701CA7A5E20000004 /* MediaKeyRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaKeyRouter.swift; sourceTree = "<group>"; };
 		A5583E7701CA7A5E20000005 /* MediaKeyTap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaKeyTap.swift; sourceTree = "<group>"; };
 		A5583E7701CA7A5E20000006 /* Preferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Preferences.swift; sourceTree = "<group>"; };
+		5A9B1E000000000000000005 /* UpdaterController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdaterController.swift; sourceTree = "<group>"; };
 		AB9B1FE428CEE84560772E2E /* MacQ-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "MacQ-Bridging-Header.h"; sourceTree = "<group>"; };
 		B79FB23B9E469C1E052F24EC /* BenQProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenQProfile.swift; sourceTree = "<group>"; };
 		B989B570CF6D93895F1E9340 /* Capabilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Capabilities.swift; sourceTree = "<group>"; };
@@ -62,6 +65,17 @@
 		E667F3EE834D6F23B19A9129 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		FB2EA7AC5E021DF124C46A90 /* DisplayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		5A9B1E000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5A9B1E000000000000000002 /* Sparkle in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		06EC98AF9643DCD63A08BD95 /* App */ = {
@@ -104,6 +118,7 @@
 				A5583E7701CA7A5E20000005 /* MediaKeyTap.swift */,
 				93DDF6E9AB9BB2CED8EF04D9 /* Models.swift */,
 				A5583E7701CA7A5E20000006 /* Preferences.swift */,
+				5A9B1E000000000000000005 /* UpdaterController.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -154,6 +169,7 @@
 			buildConfigurationList = B026A23262422D0C87CF1EE0 /* Build configuration list for PBXNativeTarget "MacQ" */;
 			buildPhases = (
 				A821B07E0FC99A68E146D96E /* Sources */,
+				5A9B1E000000000000000001 /* Frameworks */,
 				A5583E7701CA7A5E10000003 /* Resources */,
 			);
 			buildRules = (
@@ -162,6 +178,7 @@
 			);
 			name = MacQ;
 			packageProductDependencies = (
+				5A9B1E000000000000000004 /* Sparkle */,
 			);
 			productName = MacQ;
 			productReference = C14C18EC1D80BE139ED84823 /* MacQ.app */;
@@ -185,6 +202,9 @@
 			);
 			mainGroup = 37B07A872CF5A63DECCC93A4;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				5A9B1E000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8B5B51707B9C1FEBBBDC0173 /* Products */;
 			projectDirPath = "";
@@ -233,6 +253,7 @@
 				A5583E7701CA7A5E30000006 /* Preferences.swift in Sources */,
 				FB011A1563FE6BED4FB1D09A /* SettingsView.swift in Sources */,
 				32BF666F99BB7D2FAE73D179 /* main.swift in Sources */,
+				5A9B1E000000000000000006 /* UpdaterController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -468,6 +489,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		5A9B1E000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.6;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		5A9B1E000000000000000004 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5A9B1E000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F29DDA16A017B23BBACC9735 /* Project object */;
 }

@@ -45,6 +45,10 @@ secrets/*
 *.provisionprofile
 AuthKey_*.p8
 
+# Python tooling
+__pycache__/
+*.py[cod]
+
 # Editor / tooling
 .vscode/
 .idea/

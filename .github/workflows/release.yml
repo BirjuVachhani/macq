@@ -1,7 +1,9 @@
 name: Release DMG
 
-# Builds the signed and notarized DMG with the root Makefile and attaches it to a
-# GitHub release.
+# Builds the signed and notarized DMG with the root Makefile (`make dmg`) and
+# attaches it to a GitHub release. Publishing to Cloudflare R2 and refreshing
+# the Sparkle appcast is `make release`, which is run from a maintainer's
+# machine; this workflow does not hold the R2 credentials.
 #
 #   release (published)  build the release that was just published
 #   workflow_dispatch    build a version you name and attach it to that release
@@ -224,7 +226,11 @@ jobs:
           # CFBundleVersion. github.run_number is monotonic, so every release
           # build gets a higher build number than the last.
           BUILD_NUMBER: ${{ github.run_number }}
-        run: make release VERSION="$VERSION" BUILD_NUMBER="$BUILD_NUMBER"
+        # `make dmg`, not `make release`: release also publishes to the
+        # Cloudflare R2 bucket and updates the Sparkle appcast, which this
+        # workflow has no credentials for and is not responsible for. Its job
+        # ends at attaching the DMG to the GitHub release below.
+        run: make dmg VERSION="$VERSION" BUILD_NUMBER="$BUILD_NUMBER"
 
       - name: Upload DMG to the release
         env:

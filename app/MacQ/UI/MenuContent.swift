@@ -12,10 +12,14 @@ import AppKit
 struct MenuContent: View {
     @EnvironmentObject var controller: DisplayController
     @ObservedObject private var prefs = Preferences.shared
+    @ObservedObject private var updater = UpdaterController.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
+            if updater.isUpdateAvailable {
+                updateBanner
+            }
             Divider()
 
             if controller.availability.isAvailable {
@@ -59,6 +63,46 @@ struct MenuContent: View {
                 ProgressView().controlSize(.small)
             }
         }
+    }
+
+    // MARK: Update
+
+    /// Shown only once a check has found a newer version. Deliberately a banner
+    /// rather than another row in the actions list: it is the one thing here
+    /// that is news, and the actions below already hold a "Check for updates…"
+    /// row that calls the same method, which would read as a duplicate.
+    private var updateBanner: some View {
+        Button {
+            updater.checkForUpdates()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(Color.accentColor)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Update to latest version")
+                        .font(.subheadline.weight(.semibold))
+                    if let version = updater.availableVersion {
+                        Text("Version \(version) is available")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.accentColor.opacity(0.12))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!updater.canActOnUpdates)
     }
 
     // MARK: Sources
@@ -200,6 +244,12 @@ struct MenuContent: View {
             MenuActionRow(title: "Sync now", systemImage: "arrow.clockwise") {
                 controller.refresh()
             }
+            MenuActionRow(title: "Check for updates…", systemImage: "arrow.down.circle") {
+                updater.checkForUpdates()
+            }
+            // False for the duration of a check that is already running, which
+            // is exactly when a second one would be dropped on the floor.
+            .disabled(!updater.canCheckForUpdates)
             MenuActionRow(title: "Settings…", systemImage: "gearshape") {
                 (NSApp.delegate as? AppDelegate)?.showSettings()
             }

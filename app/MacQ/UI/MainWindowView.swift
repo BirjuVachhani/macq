@@ -11,6 +11,7 @@ import AppKit
 
 struct MainWindowView: View {
     @EnvironmentObject var controller: DisplayController
+    @ObservedObject private var updater = UpdaterController.shared
 
     private var version: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
@@ -21,10 +22,13 @@ struct MainWindowView: View {
             header
             features
             Spacer(minLength: 8)
+            if updater.isUpdateAvailable {
+                updateBanner
+            }
             monitorStatus
             footer
         }
-        .frame(width: 420, height: 540)
+        .frame(width: 420, height: 600)
         .background(.windowBackground)
     }
 
@@ -66,6 +70,46 @@ struct MainWindowView: View {
                        detail: "Control the monitor's built-in speaker volume.")
         }
         .padding(.horizontal, 28)
+    }
+
+    // MARK: Update
+
+    /// Sits above the monitor status, and only once a check has found a newer
+    /// version. MacQ checks at launch and then hourly, so this window is often
+    /// where someone first learns an update exists.
+    private var updateBanner: some View {
+        Button {
+            updater.checkForUpdates()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(Color.accentColor)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Update to latest version")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    if let available = updater.availableVersion {
+                        Text("Version \(available) is available. You have \(version).")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.12)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!updater.canActOnUpdates)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 10)
     }
 
     // MARK: Status

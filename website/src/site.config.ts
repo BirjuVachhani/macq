@@ -1,16 +1,17 @@
 /**
  * Everything on the page that is copy rather than layout.
  *
- * `version` and `download` are only the fallback now. The live download button
- * reads the latest release from the GitHub API at build time, and drops back to
- * these two if it cannot. See lib/release.ts. The DMG name follows the
- * Makefile's `$(APP_NAME)-$(VERSION).dmg` and the tag has no `v` prefix,
- * matching the existing GitHub releases.
+ * `version` is only the fallback now. The live download button reads the latest
+ * release version from the GitHub API at build time, then points at the DMG in
+ * Cloudflare R2. If GitHub cannot be reached, it uses this version instead. See
+ * lib/release.ts. The DMG name follows the Makefile's
+ * `$(APP_NAME)-$(VERSION).dmg`.
  */
 
 const repo = 'https://github.com/BirjuVachhani/macq';
 const version = '0.3.0';
 const domain = 'macq.birju.dev';
+const artifacts = 'https://artifacts.birju.dev/macq';
 
 export const site = {
   name: 'MacQ',
@@ -30,7 +31,8 @@ export const site = {
   version,
   /** A pill next to the version, for 'Alpha' and the like. Null hides it. */
   releaseStage: null as string | null,
-  download: `${repo}/releases/download/${version}/MacQ-${version}.dmg`,
+  artifacts,
+  download: `${artifacts}/MacQ-${version}.dmg`,
 
   /** Matches PRODUCT_BUNDLE_IDENTIFIER in app/MacQ.xcodeproj. The privacy page
       quotes it as the path to the preferences file MacQ writes. */

@@ -184,19 +184,72 @@ window: look for the display icon in the menu bar.
 
 ## Releasing
 
-The [Makefile](Makefile) builds, signs, notarizes and packages a distributable
-DMG. It needs an Apple Developer account, since the `IOAVService` path does not
-work under the App Store sandbox and therefore ships Developer ID signed and
-notarized outside the App Store.
+The [Makefile](Makefile) builds, signs, notarizes, packages and publishes a
+distributable DMG. It needs an Apple Developer account, since the `IOAVService`
+path does not work under the App Store sandbox and therefore ships Developer ID
+signed and notarized outside the App Store.
 
 ```sh
-cp secrets/config.mk.example secrets/config.mk   # fill in signing identity + notary creds
+cp secrets/config.mk.example secrets/config.mk   # signing identity, notary creds, R2 token
 make doctor                                      # check toolchain and config
-make release                                     # build, sign, notarize, dmg, verify
+
+./set_version.sh 0.4.0 ++                        # bump the version and the build number
+$EDITOR CHANGELOG.md                             # write the release notes for 0.4.0
+
+make dmg                                         # signed, notarized, stapled DMG
+make release                                     # ...and publish it, with the appcast, to R2
 ```
+
+`make dmg` is everything up to a shippable file: it builds a universal Release
+app, signs it with Developer ID, notarizes and staples both the app and the
+DMG, and checks the result against Gatekeeper before it succeeds. It stops
+there, so it is also the command to use when you want to inspect or hand out a
+build without announcing it to anyone.
+
+`make release` runs `make dmg`, then generates the Sparkle appcast and uploads
+it. See [In-app updates](#in-app-updates) below.
 
 `make help` lists every target. Signing material and credentials live in
 [secrets/](secrets/README.md) and are excluded from version control.
+
+### In-app updates
+
+MacQ updates itself with [Sparkle](https://sparkle-project.org). The app checks
+`SUFeedURL` from `Info.plist` whenever it starts, then once an hour while
+automatic checks are enabled. A scheduled check stays quiet when the app is
+current; when it finds a release, the welcome window and menu-bar popover show
+"Update to latest version" until the user acts on it. MacQ installs nothing
+that is not signed by the EdDSA key whose public half sits beside the feed URL
+in `SUPublicEDKey`, so a compromised host still cannot ship code to anyone.
+
+`make release` maintains that feed:
+
+1. `sign_update` signs the DMG with the private key from your login keychain.
+   `make sparkle-tools` fetches the binary from Sparkle's release tarball, and
+   `make appcast` does that for you.
+2. [scripts/appcast.py](scripts/appcast.py) takes the release notes for this
+   version out of [CHANGELOG.md](CHANGELOG.md), renders them to the HTML
+   Sparkle shows in its update dialog, and writes `artifacts/appcast.xml`. The
+   feed already published is merged in first, so earlier releases stay listed.
+3. The DMG, its `.sha256` and the appcast go to the R2 bucket. The appcast is
+   uploaded last, because it is the file the app polls: publishing it ahead of
+   the DMG would offer every running copy an update that 404s.
+
+Two things have to be true before a release is offered to anyone:
+
+- **CHANGELOG.md needs a `## [<version>]` section.** `make release` refuses
+  without one rather than shipping an update with empty release notes.
+- **The build number has to increase.** Sparkle compares `CFBundleVersion`, not
+  the marketing version, so a release that reuses one leaves everyone on what
+  they have. `./set_version.sh <version> ++` bumps both, and the appcast
+  generator fails if the published feed already offers a higher build.
+
+Losing the Sparkle private key means no future build can ever update an
+installed copy. Keep an offline backup:
+
+```sh
+./build/sparkle-tools/bin/generate_keys --account macq -x sparkle-private-key.txt
+```
 
 ## Architecture
 

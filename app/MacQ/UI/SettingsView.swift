@@ -8,6 +8,7 @@
 
 import AppKit
 import SwiftUI
+import Combine
 import ServiceManagement
 
 struct SettingsView: View {
@@ -54,11 +55,21 @@ struct SettingsView: View {
 
 private struct GeneralTab: View {
     @EnvironmentObject var controller: DisplayController
+    @ObservedObject private var updater = UpdaterController.shared
     @State private var launchAtLogin = LoginItem.isEnabled
 
     private var version: String {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         return "MacQ \(v)"
+    }
+
+    private var lastCheckText: String {
+        guard let date = updater.lastCheckDate else {
+            return "MacQ has not checked for updates yet."
+        }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return "Last checked \(formatter.localizedString(for: date, relativeTo: .now))."
     }
 
     var body: some View {
@@ -78,6 +89,24 @@ private struct GeneralTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+            Section("Updates") {
+                Toggle("Automatically check for updates", isOn: $updater.automaticallyChecksForUpdates)
+                Text(updater.automaticallyChecksForUpdates
+                     ? "MacQ checks every hour and whenever it starts."
+                     : "Automatic hourly checks are off. MacQ still checks once whenever it starts.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button {
+                    updater.checkForUpdates()
+                } label: {
+                    Label("Check now", systemImage: "arrow.down.circle")
+                }
+                // False while a check is already in flight.
+                .disabled(!updater.canCheckForUpdates)
+                Text(lastCheckText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Section("Detected monitor") {
                 if let display = controller.display {
