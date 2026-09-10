@@ -1,15 +1,6 @@
-# Changelog
+## 0.3.1
 
-Notable changes to MacQ, newest first.
-
-The entries here are what Sparkle shows in the update dialog: `make release`
-lifts the section matching the version being built straight out of this file and
-puts it in [the appcast](https://artifacts.birju.dev/macq/appcast.xml). Write
-them for someone deciding whether to install the update, not for someone
-reading the diff.
-
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
-MacQ aims at [semantic versioning](https://semver.org/spec/v2.0.0.html).
+- Support auto updating.
 
 ## [0.3.0] - 2026-09-05
 
